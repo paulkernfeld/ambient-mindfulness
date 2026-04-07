@@ -32,7 +32,7 @@ jobs:
           xcodebuild test \
             -project AmbientMindfulness.xcodeproj \
             -scheme AmbientMindfulness \
-            -destination 'platform=macOS,arch=arm64,variant=Designed for [iPad,iPhone]' \
+            -destination 'platform=macOS' \
             2>&1 | tail -50
 
   deploy:
