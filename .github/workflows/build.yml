@@ -1,0 +1,47 @@
+name: Build & Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build watchOS app
+        run: |
+          xcodebuild build \
+            -project AmbientMindfulness.xcodeproj \
+            -scheme "AmbientMindfulness Watch App" \
+            -destination 'platform=watchOS Simulator,OS=latest,name=Apple Watch Series 9 (45mm)' \
+            | tail -30
+
+      - name: Build iOS app
+        run: |
+          xcodebuild build \
+            -project AmbientMindfulness.xcodeproj \
+            -scheme AmbientMindfulness \
+            -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16' \
+            | tail -30
+
+      - name: Run tests
+        run: |
+          xcodebuild test \
+            -project AmbientMindfulness.xcodeproj \
+            -scheme AmbientMindfulness \
+            -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16' \
+            | tail -30
