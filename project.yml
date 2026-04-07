@@ -17,6 +17,9 @@ targets:
     sources:
       - path: AmbientMindfulness
       - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.paulkernfeld.ambientmindfulness
     dependencies:
       - target: "AmbientMindfulness Watch App"
 
@@ -28,7 +31,10 @@ targets:
       - path: Shared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.paulkernfeld.AmbientMindfulness.watchkitapp
+        PRODUCT_BUNDLE_IDENTIFIER: com.paulkernfeld.ambientmindfulness.watchkitapp
+    info:
+      properties:
+        WKCompanionAppBundleIdentifier: com.paulkernfeld.ambientmindfulness
 
   AmbientMindfulnessTests:
     type: bundle.unit-test
