@@ -39,6 +39,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.paulkernfeld.ambientmindfulness.watchkitapp
         INFOPLIST_KEY_WKCompanionAppBundleIdentifier: com.paulkernfeld.ambientmindfulness
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 
   AmbientMindfulnessTests:
     type: bundle.unit-test
