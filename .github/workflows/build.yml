@@ -1,4 +1,4 @@
-name: Build & Test
+name: Build, Test & Deploy
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-and-test:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -22,22 +22,6 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Build watchOS app
-        run: |
-          xcodebuild build \
-            -project AmbientMindfulness.xcodeproj \
-            -scheme "AmbientMindfulness Watch App" \
-            -destination 'platform=watchOS Simulator,OS=latest,name=Apple Watch Series 9 (45mm)' \
-            | tail -30
-
-      - name: Build iOS app
-        run: |
-          xcodebuild build \
-            -project AmbientMindfulness.xcodeproj \
-            -scheme AmbientMindfulness \
-            -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16' \
-            | tail -30
-
       - name: Run tests
         run: |
           xcodebuild test \
@@ -45,3 +29,83 @@ jobs:
             -scheme AmbientMindfulness \
             -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16' \
             | tail -30
+
+  deploy:
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: macos-15
+    env:
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Write App Store Connect API key
+        run: |
+          mkdir -p ~/.private_keys
+          echo "$APP_STORE_CONNECT_PRIVATE_KEY" > ~/.private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8
+        env:
+          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+
+      - name: Archive iOS app (with embedded watchOS app)
+        run: |
+          xcodebuild archive \
+            -project AmbientMindfulness.xcodeproj \
+            -scheme AmbientMindfulness \
+            -archivePath build/AmbientMindfulness.xcarchive \
+            -destination 'generic/platform=iOS' \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/.private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            | tail -30
+
+      - name: Export IPA
+        run: |
+          cat > ExportOptions.plist << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>destination</key>
+            <string>upload</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>teamID</key>
+            <string>TEAM_ID_PLACEHOLDER</string>
+          </dict>
+          </plist>
+          PLIST
+          sed -i '' "s/TEAM_ID_PLACEHOLDER/$APPLE_TEAM_ID/" ExportOptions.plist
+          xcodebuild -exportArchive \
+            -archivePath build/AmbientMindfulness.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/.private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
+            | tail -30
+
+      - name: Upload to TestFlight
+        run: |
+          xcrun altool --upload-app \
+            --type ios \
+            --file build/export/AmbientMindfulness.ipa \
+            --apiKey "$APP_STORE_CONNECT_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID" \
+            | tail -10

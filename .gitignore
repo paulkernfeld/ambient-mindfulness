@@ -17,3 +17,8 @@ build/
 
 # XcodeGen clone (if built locally)
 XcodeGen/
+
+# Apple credentials — NEVER commit
+*.p8
+apple-issuer-id.txt
+apple-team-id.txt
