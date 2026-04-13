@@ -90,7 +90,7 @@ jobs:
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             2>&1 | tail -50
 
-      - name: Export IPA
+      - name: Export and upload to TestFlight
         run: |
           set -o pipefail
           cat > ExportOptions.plist << PLIST
@@ -117,7 +117,6 @@ jobs:
             -authenticationKeyPath ~/.private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
-            2>&1 | tail -50
-
-      # Upload happens automatically via xcodebuild -exportArchive
-      # with destination=upload in ExportOptions.plist
+            2>&1 | tee /tmp/export.log | tail -50
+          # Verify upload actually succeeded (don't trust exit code alone)
+          grep -q "Upload succeeded" /tmp/export.log
