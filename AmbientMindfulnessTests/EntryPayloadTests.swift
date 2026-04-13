@@ -91,7 +91,7 @@ final class EntryPayloadTests: XCTestCase {
         XCTAssertEqual(EntryPayload.sentimentResponse(sentiment: .veryPositive).label, "Response: 🤩")
         XCTAssertEqual(EntryPayload.permissionGranted.label, "Permission: OK")
         XCTAssertEqual(EntryPayload.permissionDenied(error: "nope").label, "Permission: DENIED nope")
-        XCTAssertEqual(EntryPayload.permissionDenied(error: nil).label, "Permission: DENIED ")
+        XCTAssertEqual(EntryPayload.permissionDenied(error: nil).label, "Permission: DENIED")
         XCTAssertEqual(EntryPayload.notificationsScheduled(count: 35, nextTime: nil).label, "Scheduled: 35")
         XCTAssertEqual(EntryPayload.schedulingError(error: "boom").label, "Error: boom")
         XCTAssertEqual(EntryPayload.testNotificationScheduled.label, "Test scheduled")

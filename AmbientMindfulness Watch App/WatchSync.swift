@@ -5,7 +5,7 @@ import os
 
 private let logger = Logger(subsystem: "com.paulkernfeld.AmbientMindfulness", category: "WatchSync")
 
-final class WatchSync: NSObject, WCSessionDelegate {
+final class WatchSync: NSObject, WCSessionDelegate, @unchecked Sendable {
     let modelContainer: ModelContainer
 
     init(modelContainer: ModelContainer) {

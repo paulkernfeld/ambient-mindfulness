@@ -34,7 +34,7 @@ enum EntryPayload: Codable, Equatable {
         case .sentimentDelivered: return "Delivered"
         case .sentimentResponse(let s): return "Response: \(s.emoji)"
         case .permissionGranted: return "Permission: OK"
-        case .permissionDenied(let e): return "Permission: DENIED \(e ?? "")"
+        case .permissionDenied(let e): return "Permission: DENIED" + (e.map { " \($0)" } ?? "")
         case .notificationsScheduled(let c, _): return "Scheduled: \(c)"
         case .schedulingError(let e): return "Error: \(e)"
         case .testNotificationScheduled: return "Test scheduled"

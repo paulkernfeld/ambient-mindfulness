@@ -7,6 +7,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 defaults:
   run:
     shell: bash
@@ -88,22 +92,6 @@ jobs:
 
       - name: Export and upload to TestFlight
         run: |
-          cat > ExportOptions.plist << PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>app-store-connect</string>
-            <key>destination</key>
-            <string>upload</string>
-            <key>signingStyle</key>
-            <string>automatic</string>
-            <key>teamID</key>
-            <string>${APPLE_TEAM_ID}</string>
-          </dict>
-          </plist>
-          PLIST
           xcodebuild -exportArchive \
             -archivePath build/AmbientMindfulness.xcarchive \
             -exportPath build/export \
@@ -113,5 +101,7 @@ jobs:
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
             2>&1 | tee /tmp/export.log
-          # Verify upload actually succeeded (don't trust exit code alone)
+          # Verify upload actually succeeded — fragile string match but
+          # catches silent failures like duplicate build numbers.
+          # If Apple changes the message, update this grep.
           grep -q "Upload succeeded" /tmp/export.log
