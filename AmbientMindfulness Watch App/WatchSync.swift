@@ -1,6 +1,9 @@
 import Foundation
 import WatchConnectivity
 import SwiftData
+import os
+
+private let logger = Logger(subsystem: "com.paulkernfeld.AmbientMindfulness", category: "WatchSync")
 
 final class WatchSync: NSObject, WCSessionDelegate {
     let modelContainer: ModelContainer
@@ -13,26 +16,30 @@ final class WatchSync: NSObject, WCSessionDelegate {
         WCSession.default.activate()
     }
 
-    func session(
+    nonisolated func session(
         _ session: WCSession,
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
     ) {}
 
+    @MainActor
     func sendAllEntries() {
         guard WCSession.default.activationState == .activated else { return }
 
         let context = ModelContext(modelContainer)
         let descriptor = FetchDescriptor<MindfulEntry>(sortBy: [SortDescriptor(\.timestamp)])
-        guard let entries = try? context.fetch(descriptor) else { return }
 
-        let encoded: [[String: Any]] = entries.compactMap { entry in
-            [
-                "timestamp": entry.timestamp.timeIntervalSince1970,
-                "payload": [UInt8](entry.payloadJSON)
-            ]
+        do {
+            let entries = try context.fetch(descriptor)
+            let encoded: [[String: Any]] = entries.compactMap { entry in
+                [
+                    "timestamp": entry.timestamp.timeIntervalSince1970,
+                    "payload": entry.payloadJSON
+                ]
+            }
+            try WCSession.default.updateApplicationContext(["entries": encoded])
+        } catch {
+            logger.error("Failed to sync entries: \(error.localizedDescription)")
         }
-
-        try? WCSession.default.updateApplicationContext(["entries": encoded])
     }
 }

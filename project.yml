@@ -46,6 +46,5 @@ targets:
     platform: iOS
     sources:
       - path: AmbientMindfulnessTests
-      - path: Shared
     dependencies:
       - target: AmbientMindfulness

@@ -17,13 +17,16 @@ struct AmbientMindfulnessWatchApp: App {
     init() {
         let container = try! ModelContainer(for: MindfulEntry.self)
         self.container = container
-        self.notificationDelegate = NotificationDelegate(modelContainer: container)
-        self.watchSync = WatchSync(modelContainer: container)
+        let watchSync = WatchSync(modelContainer: container)
+        self.watchSync = watchSync
+        let notificationDelegate = NotificationDelegate(modelContainer: container)
+        notificationDelegate.watchSync = watchSync
+        self.notificationDelegate = notificationDelegate
 
         UNUserNotificationCenter.current().delegate = notificationDelegate
         NotificationScheduler.registerCategory()
         Task {
-            await NotificationScheduler.scheduleUpcoming()
+            await NotificationScheduler.scheduleUpcoming(modelContainer: container)
         }
     }
 }

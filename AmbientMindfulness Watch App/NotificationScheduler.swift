@@ -1,5 +1,6 @@
 import Foundation
 import UserNotifications
+import SwiftData
 
 enum NotificationScheduler {
     static let categoryIdentifier = "SENTIMENT_CHECK"
@@ -24,16 +25,30 @@ enum NotificationScheduler {
         UNUserNotificationCenter.current().setNotificationCategories([category])
     }
 
-    static func scheduleUpcoming() async {
+    @MainActor
+    static func scheduleUpcoming(modelContainer: ModelContainer) async {
+        let context = ModelContext(modelContainer)
         let center = UNUserNotificationCenter.current()
 
-        let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
-        guard granted else { return }
+        do {
+            let granted = try await center.requestAuthorization(options: [.alert, .sound])
+            if granted {
+                EntryLogger.log(.permissionGranted, in: context)
+            } else {
+                EntryLogger.log(.permissionDenied(error: nil), in: context)
+                return
+            }
+        } catch {
+            EntryLogger.log(.permissionDenied(error: error.localizedDescription), in: context)
+            return
+        }
 
         center.removeAllPendingNotificationRequests()
 
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
+        var scheduledCount = 0
+        var firstTime: Date?
 
         for dayOffset in 0..<daysToSchedule {
             guard let date = calendar.date(byAdding: .day, value: dayOffset, to: today) else { continue }
@@ -43,6 +58,8 @@ enum NotificationScheduler {
                 guard time > Date() else { continue }
 
                 let content = UNMutableNotificationContent()
+                content.title = "How are you?"
+                content.body = "Tap to check in"
                 content.categoryIdentifier = categoryIdentifier
                 content.sound = .default
 
@@ -61,8 +78,42 @@ enum NotificationScheduler {
                     trigger: trigger
                 )
 
-                try? await center.add(request)
+                do {
+                    try await center.add(request)
+                    scheduledCount += 1
+                    if firstTime == nil { firstTime = time }
+                } catch {
+                    EntryLogger.log(.schedulingError(error: error.localizedDescription), in: context)
+                }
             }
+        }
+
+        EntryLogger.log(.notificationsScheduled(count: scheduledCount, nextTime: firstTime), in: context)
+    }
+
+    @MainActor
+    static func scheduleTestNotification(modelContainer: ModelContainer) async {
+        let context = ModelContext(modelContainer)
+        let center = UNUserNotificationCenter.current()
+
+        let content = UNMutableNotificationContent()
+        content.title = "Test notification"
+        content.body = "Tap to check in"
+        content.categoryIdentifier = categoryIdentifier
+        content.sound = .default
+
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
+        let request = UNNotificationRequest(
+            identifier: "test-\(Date().timeIntervalSince1970)",
+            content: content,
+            trigger: trigger
+        )
+
+        do {
+            try await center.add(request)
+            EntryLogger.log(.testNotificationScheduled, in: context)
+        } catch {
+            EntryLogger.log(.schedulingError(error: error.localizedDescription), in: context)
         }
     }
 }

@@ -9,12 +9,7 @@ struct LogView: View {
             List(entries) { entry in
                 HStack {
                     if let payload = entry.payload {
-                        switch payload {
-                        case .sentimentDelivered:
-                            Text("📩")
-                        case .sentimentResponse(let sentiment):
-                            Text(sentiment.emoji)
-                        }
+                        Text(payload.emoji)
                     }
                     Spacer()
                     VStack(alignment: .trailing) {

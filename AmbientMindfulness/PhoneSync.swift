@@ -1,7 +1,11 @@
 import Foundation
 import WatchConnectivity
 import SwiftData
+import os
 
+private let logger = Logger(subsystem: "com.paulkernfeld.AmbientMindfulness", category: "PhoneSync")
+
+@MainActor
 final class PhoneSync: NSObject, WCSessionDelegate {
     let modelContainer: ModelContainer
 
@@ -13,42 +17,52 @@ final class PhoneSync: NSObject, WCSessionDelegate {
         WCSession.default.activate()
     }
 
-    func session(
+    nonisolated func session(
         _ session: WCSession,
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
     ) {}
 
-    func sessionDidBecomeInactive(_ session: WCSession) {}
+    nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
 
-    func sessionDidDeactivate(_ session: WCSession) {
+    nonisolated func sessionDidDeactivate(_ session: WCSession) {
         WCSession.default.activate()
     }
 
-    func session(
+    nonisolated func session(
         _ session: WCSession,
         didReceiveApplicationContext applicationContext: [String: Any]
     ) {
-        guard let rawEntries = applicationContext["entries"] as? [[String: Any]] else { return }
+        let container = modelContainer
+        Task { @MainActor in
+            guard let rawEntries = applicationContext["entries"] as? [[String: Any]] else { return }
 
-        let context = ModelContext(modelContainer)
+            let context = ModelContext(container)
 
-        if let existing = try? context.fetch(FetchDescriptor<MindfulEntry>()) {
-            existing.forEach { context.delete($0) }
+            do {
+                let existing = try context.fetch(FetchDescriptor<MindfulEntry>())
+                existing.forEach { context.delete($0) }
+            } catch {
+                logger.error("Failed to fetch existing entries: \(error.localizedDescription)")
+            }
+
+            for raw in rawEntries {
+                guard let timestamp = raw["timestamp"] as? TimeInterval,
+                      let payloadData = raw["payload"] as? Data
+                else { continue }
+
+                let entry = MindfulEntry(
+                    timestamp: Date(timeIntervalSince1970: timestamp),
+                    payloadJSON: payloadData
+                )
+                context.insert(entry)
+            }
+
+            do {
+                try context.save()
+            } catch {
+                logger.error("Failed to save synced entries: \(error.localizedDescription)")
+            }
         }
-
-        for raw in rawEntries {
-            guard let timestamp = raw["timestamp"] as? TimeInterval,
-                  let payloadBytes = raw["payload"] as? [UInt8]
-            else { continue }
-
-            let entry = MindfulEntry(
-                timestamp: Date(timeIntervalSince1970: timestamp),
-                payloadJSON: Data(payloadBytes)
-            )
-            context.insert(entry)
-        }
-
-        try? context.save()
     }
 }

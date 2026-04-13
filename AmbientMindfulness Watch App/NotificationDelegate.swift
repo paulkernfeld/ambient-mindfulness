@@ -2,8 +2,10 @@ import Foundation
 import UserNotifications
 import SwiftData
 
+@MainActor
 final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     let modelContainer: ModelContainer
+    var watchSync: WatchSync?
 
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
@@ -15,7 +17,8 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     ) async -> UNNotificationPresentationOptions {
         let context = ModelContext(modelContainer)
         EntryLogger.log(.sentimentDelivered, in: context)
-        return [.sound]
+        watchSync?.sendAllEntries()
+        return [.banner, .list, .sound]
     }
 
     func userNotificationCenter(
@@ -29,5 +32,6 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
 
         let context = ModelContext(modelContainer)
         EntryLogger.log(.sentimentResponse(sentiment: sentiment), in: context)
+        watchSync?.sendAllEntries()
     }
 }
