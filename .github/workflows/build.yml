@@ -32,13 +32,11 @@ jobs:
 
       - name: Run tests
         run: |
-          set -o pipefail
           xcodebuild test \
             -project AmbientMindfulness.xcodeproj \
             -scheme AmbientMindfulness \
             -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
-            CODE_SIGNING_ALLOWED=NO \
-            2>&1 | tail -50
+            CODE_SIGNING_ALLOWED=NO
 
   deploy:
     needs: build-and-test
@@ -75,7 +73,6 @@ jobs:
         env:
           BUILD_NUMBER: ${{ github.run_number }}
         run: |
-          set -o pipefail
           xcodebuild archive \
             -project AmbientMindfulness.xcodeproj \
             -scheme AmbientMindfulness \
@@ -87,12 +84,10 @@ jobs:
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CODE_SIGN_STYLE=Automatic \
-            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-            2>&1 | tail -50
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
 
       - name: Export and upload to TestFlight
         run: |
-          set -o pipefail
           cat > ExportOptions.plist << PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -117,6 +112,6 @@ jobs:
             -authenticationKeyPath ~/.private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8 \
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
-            2>&1 | tee /tmp/export.log | tail -50
+            2>&1 | tee /tmp/export.log
           # Verify upload actually succeeded (don't trust exit code alone)
           grep -q "Upload succeeded" /tmp/export.log
