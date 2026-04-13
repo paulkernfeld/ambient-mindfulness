@@ -81,6 +81,13 @@ jobs:
         env:
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
 
+      - name: Clean up old signing certificates
+        run: node scripts/asc-cleanup-certs.js
+        env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          ASC_KEY_PATH: ~/.private_keys/AuthKey_${{ secrets.APP_STORE_CONNECT_KEY_ID }}.p8
+
       - name: Archive iOS app (with embedded watchOS app)
         env:
           BUILD_NUMBER: ${{ github.run_number }}
