@@ -10,7 +10,7 @@ KEY_ID="V92Q946H8M"
 ISSUER_ID="$(cat "$REPO_DIR/apple-issuer-id.txt")"
 KEY_FILE="$REPO_DIR/AuthKey_${KEY_ID}.p8"
 
-BUILD_NUM="${1:-29}"
+BUILD_NUM="${1:-}"
 
 node -e "
 const crypto = require('crypto');
