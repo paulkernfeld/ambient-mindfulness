@@ -33,10 +33,17 @@ final class PhoneSync: NSObject, WCSessionDelegate {
         _ session: WCSession,
         didReceiveApplicationContext applicationContext: [String: Any]
     ) {
+        guard let rawEntries = applicationContext["entries"] as? [[String: Any]] else { return }
+
+        let parsed: [(TimeInterval, Data)] = rawEntries.compactMap { raw in
+            guard let timestamp = raw["timestamp"] as? TimeInterval,
+                  let payloadData = raw["payload"] as? Data
+            else { return nil }
+            return (timestamp, payloadData)
+        }
+
         let container = modelContainer
         Task { @MainActor in
-            guard let rawEntries = applicationContext["entries"] as? [[String: Any]] else { return }
-
             let context = ModelContext(container)
 
             do {
@@ -46,11 +53,7 @@ final class PhoneSync: NSObject, WCSessionDelegate {
                 logger.error("Failed to fetch existing entries: \(error.localizedDescription)")
             }
 
-            for raw in rawEntries {
-                guard let timestamp = raw["timestamp"] as? TimeInterval,
-                      let payloadData = raw["payload"] as? Data
-                else { continue }
-
+            for (timestamp, payloadData) in parsed {
                 let entry = MindfulEntry(
                     timestamp: Date(timeIntervalSince1970: timestamp),
                     payloadJSON: payloadData
