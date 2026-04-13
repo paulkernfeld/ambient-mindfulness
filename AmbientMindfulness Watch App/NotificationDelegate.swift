@@ -2,10 +2,9 @@ import Foundation
 import UserNotifications
 import SwiftData
 
-@MainActor
 final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     let modelContainer: ModelContainer
-    var watchSync: WatchSync?
+    @MainActor var watchSync: WatchSync?
 
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
@@ -15,9 +14,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        let context = ModelContext(modelContainer)
-        EntryLogger.log(.sentimentDelivered, in: context)
-        watchSync?.sendAllEntries()
+        await logAndSync(.sentimentDelivered)
         return [.banner, .list, .sound]
     }
 
@@ -30,8 +27,13 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
               let sentiment = Sentiment(rawValue: response.actionIdentifier)
         else { return }
 
+        await logAndSync(.sentimentResponse(sentiment: sentiment))
+    }
+
+    @MainActor
+    private func logAndSync(_ payload: EntryPayload) {
         let context = ModelContext(modelContainer)
-        EntryLogger.log(.sentimentResponse(sentiment: sentiment), in: context)
+        EntryLogger.log(payload, in: context)
         watchSync?.sendAllEntries()
     }
 }
