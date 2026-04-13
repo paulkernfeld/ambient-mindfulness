@@ -2,7 +2,7 @@ import Foundation
 import UserNotifications
 import SwiftData
 
-final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @unchecked Sendable {
     let modelContainer: ModelContainer
     @MainActor var watchSync: WatchSync?
 
