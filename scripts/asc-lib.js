@@ -44,11 +44,13 @@ function request(token, method, path, body) {
 function resolveConfig(opts = {}) {
   const path = require('path');
   const repoDir = path.resolve(__dirname, '..');
-  const keyId = opts.keyId || process.env.ASC_KEY_ID || 'V92Q946H8M';
   const issuerId = opts.issuerId || process.env.ASC_ISSUER_ID ||
     (() => { try { return fs.readFileSync(path.join(repoDir, 'apple-issuer-id.txt'), 'utf8').trim(); } catch { return null; } })();
+  // Key ID from opts, env, or derived from AuthKey_*.p8 filename
+  const keyId = opts.keyId || process.env.ASC_KEY_ID ||
+    (() => { try { const files = require('fs').readdirSync(repoDir).filter(f => f.match(/^AuthKey_(.+)\.p8$/)); return files[0]?.match(/^AuthKey_(.+)\.p8$/)?.[1] || null; } catch { return null; } })();
   const keyPath = opts.keyPath || process.env.ASC_KEY_PATH ||
-    (() => { const p = path.join(repoDir, `AuthKey_${keyId}.p8`); return fs.existsSync(p) ? p : null; })();
+    (() => { if (!keyId) return null; const p = path.join(repoDir, `AuthKey_${keyId}.p8`); return fs.existsSync(p) ? p : null; })();
   if (!keyId || !issuerId || !keyPath) {
     throw new Error('Missing ASC config. Set ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH env vars, or run from repo root with local credential files.');
   }
