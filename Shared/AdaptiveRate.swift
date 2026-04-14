@@ -17,7 +17,8 @@ enum AdaptiveRate {
 
     /// Compute notification spacing from response frequency.
     /// Only counts user responses — no need to track deliveries.
-    /// If user responds every 15min, and target is 80%, spacing = 15min * 0.8 = 12min.
+    /// If user responds every 15min and target is 80%, spacing = 15min / 0.8 = 18.75min.
+    /// Slightly wider than their pace → pulls response rate toward target.
     static func computeSpacing(entries: [MindfulEntry], now: Date = Date()) -> RateResult {
         let ln2 = log(2.0)
         var weightedResponses = 0.0
@@ -44,7 +45,7 @@ enum AdaptiveRate {
         // effectiveWindow / weightedResponses
         let effectiveWindow = halfLife / ln2
         let responseInterval = effectiveWindow / weightedResponses
-        let spacing = responseInterval * targetRate
+        let spacing = responseInterval / targetRate
         let clampedSpacing = min(max(spacing, minSpacing), maxSpacing)
 
         return RateResult(responseInterval: responseInterval, spacing: clampedSpacing)
