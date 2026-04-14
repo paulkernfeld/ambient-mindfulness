@@ -11,16 +11,20 @@ enum AdaptiveRate {
     static let bufferSize = 3
 
     struct RateResult {
-        let weightedResponses: Double // total weighted response count
-        let responseInterval: TimeInterval? // estimated avg time between responses (nil = no data)
+        let weightedResponses: Double
+        let priorCount: Double
+        let responseInterval: TimeInterval
         let spacing: TimeInterval
-        let isDefault: Bool // true if using defaults (not enough data)
     }
 
-    /// Compute notification spacing from response frequency.
-    /// Only counts user responses — no need to track deliveries.
-    /// If user responds every 15min and target is 80%, spacing = 15min / 0.8 = 18.75min.
-    /// Slightly wider than their pace → pulls response rate toward target.
+    /// Compute notification spacing from response frequency using Bayesian blending.
+    ///
+    /// Uses a prior equivalent to the default rate (5/day). With no data, produces
+    /// exactly defaultSpacing. As real responses accumulate, they smoothly override
+    /// the prior. After ~3 days at the default rate, real data dominates.
+    ///
+    /// spacing = responseInterval / targetRate
+    /// responseInterval = effectiveWindow / (weightedResponses + priorCount)
     static func computeSpacing(entries: [MindfulEntry], now: Date = Date()) -> RateResult {
         let ln2 = log(2.0)
         var weightedResponses = 0.0
@@ -36,22 +40,21 @@ enum AdaptiveRate {
             }
         }
 
-        // Need ~5 weighted responses before departing from the default 5/day.
-        // This means roughly a day of data at the default rate before adapting.
-        guard weightedResponses > 5.0 else {
-            return RateResult(weightedResponses: weightedResponses, responseInterval: nil, spacing: defaultSpacing, isDefault: true)
-        }
-
-        // Effective time window: how much "time" the weights represent
-        // For exponential decay, the effective window ≈ halfLife / ln(2)
-        // But we want the interval between responses, which is:
-        // effectiveWindow / weightedResponses
         let effectiveWindow = halfLife / ln2
-        let responseInterval = effectiveWindow / weightedResponses
+        // Prior: virtual responses at the default rate. Derived so that
+        // priorCount alone produces exactly defaultSpacing.
+        let priorCount = effectiveWindow / (defaultSpacing * targetRate)
+        let effectiveResponses = weightedResponses + priorCount
+        let responseInterval = effectiveWindow / effectiveResponses
         let spacing = responseInterval / targetRate
         let clampedSpacing = min(max(spacing, minSpacing), maxSpacing)
 
-        return RateResult(weightedResponses: weightedResponses, responseInterval: responseInterval, spacing: clampedSpacing, isDefault: false)
+        return RateResult(
+            weightedResponses: weightedResponses,
+            priorCount: priorCount,
+            responseInterval: responseInterval,
+            spacing: clampedSpacing
+        )
     }
 
     /// Compute the next notification time after `after`, skipping sleep hours.

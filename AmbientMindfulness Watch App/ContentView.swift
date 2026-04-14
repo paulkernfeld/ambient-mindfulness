@@ -110,16 +110,13 @@ struct ContentView: View {
             .compactMap { ($0.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() }
             .min()
 
-        let result = AdaptiveRate.computeSpacing(entries: Array(entries))
-        let spacingMins = Int(result.spacing / 60)
-        let spacingStr = spacingMins >= 60 ? "\(spacingMins / 60)h \(spacingMins % 60)m" : "\(spacingMins)m"
-        if result.isDefault {
-            adaptiveInfo = "Spacing: \(spacingStr) (default, \(String(format: "%.1f", result.weightedResponses)) weighted responses, need >1)"
-        } else if let interval = result.responseInterval {
-            let intMins = Int(interval / 60)
-            let intStr = intMins >= 60 ? "\(intMins / 60)h \(intMins % 60)m" : "\(intMins)m"
-            adaptiveInfo = "Spacing: \(spacingStr) = \(intStr) interval / \(AdaptiveRate.targetRate) target (\(String(format: "%.1f", result.weightedResponses)) responses)"
+        let r = AdaptiveRate.computeSpacing(entries: Array(entries))
+        func fmt(_ t: TimeInterval) -> String {
+            let m = Int(t / 60)
+            return m >= 60 ? "\(m / 60)h \(m % 60)m" : "\(m)m"
         }
+        let dataRatio = r.weightedResponses / (r.weightedResponses + r.priorCount) * 100
+        adaptiveInfo = "Spacing: \(fmt(r.spacing)) (interval \(fmt(r.responseInterval)) / \(AdaptiveRate.targetRate))\n\(String(format: "%.1f", r.weightedResponses)) responses + \(String(format: "%.0f", r.priorCount)) prior (\(String(format: "%.0f", dataRatio))% data)"
     }
 
 }
