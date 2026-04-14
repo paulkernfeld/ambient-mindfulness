@@ -40,13 +40,23 @@ function request(token, method, path, body) {
   });
 }
 
-function createClient(opts) {
-  const keyId = opts.keyId || process.env.ASC_KEY_ID;
-  const issuerId = opts.issuerId || process.env.ASC_ISSUER_ID;
-  const keyPath = opts.keyPath || process.env.ASC_KEY_PATH;
+// Default config: env vars (CI) or local files (dev)
+function resolveConfig(opts = {}) {
+  const path = require('path');
+  const repoDir = path.resolve(__dirname, '..');
+  const keyId = opts.keyId || process.env.ASC_KEY_ID || 'V92Q946H8M';
+  const issuerId = opts.issuerId || process.env.ASC_ISSUER_ID ||
+    (() => { try { return fs.readFileSync(path.join(repoDir, 'apple-issuer-id.txt'), 'utf8').trim(); } catch { return null; } })();
+  const keyPath = opts.keyPath || process.env.ASC_KEY_PATH ||
+    (() => { const p = path.join(repoDir, `AuthKey_${keyId}.p8`); return fs.existsSync(p) ? p : null; })();
   if (!keyId || !issuerId || !keyPath) {
-    throw new Error('Missing: keyId, issuerId, keyPath (or ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH env vars)');
+    throw new Error('Missing ASC config. Set ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH env vars, or run from repo root with local credential files.');
   }
+  return { keyId, issuerId, keyPath };
+}
+
+function createClient(opts = {}) {
+  const { keyId, issuerId, keyPath } = resolveConfig(opts);
   const token = createToken(keyId, issuerId, keyPath);
   return {
     get: (path) => request(token, 'GET', path),
