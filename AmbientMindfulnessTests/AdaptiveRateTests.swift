@@ -3,16 +3,18 @@ import XCTest
 
 final class AdaptiveRateTests: XCTestCase {
 
+    private let now = Date(timeIntervalSince1970: 1_700_000_000) // fixed reference time
+
     private func makeEntry(_ payload: EntryPayload, minutesAgo: Double) -> MindfulEntry {
         let data = try! JSONEncoder().encode(payload)
         return MindfulEntry(
-            timestamp: Date().addingTimeInterval(-minutesAgo * 60),
+            timestamp: now.addingTimeInterval(-minutesAgo * 60),
             payloadJSON: data
         )
     }
 
     func testNoDataReturnsDefaults() {
-        let result = AdaptiveRate.computeRate(entries: [])
+        let result = AdaptiveRate.computeRate(entries: [], now: now)
         XCTAssertEqual(result.rate, AdaptiveRate.targetRate)
         XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing)
     }
@@ -25,7 +27,7 @@ final class AdaptiveRateTests: XCTestCase {
             makeEntry(.sentimentDelivered, minutesAgo: 120),
             makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 119),
         ]
-        let result = AdaptiveRate.computeRate(entries: entries)
+        let result = AdaptiveRate.computeRate(entries: entries, now: now)
         XCTAssertGreaterThan(result.rate, AdaptiveRate.targetRate)
         XCTAssertLessThan(result.spacing, AdaptiveRate.defaultSpacing)
     }
@@ -37,7 +39,7 @@ final class AdaptiveRateTests: XCTestCase {
             makeEntry(.sentimentDelivered, minutesAgo: 120),
             makeEntry(.sentimentDelivered, minutesAgo: 180),
         ]
-        let result = AdaptiveRate.computeRate(entries: entries)
+        let result = AdaptiveRate.computeRate(entries: entries, now: now)
         XCTAssertLessThan(result.rate, AdaptiveRate.targetRate)
         XCTAssertGreaterThan(result.spacing, AdaptiveRate.defaultSpacing)
     }
@@ -56,7 +58,7 @@ final class AdaptiveRateTests: XCTestCase {
             makeEntry(.sentimentDelivered, minutesAgo: 50),
             // no response for this one
         ]
-        let result = AdaptiveRate.computeRate(entries: entries)
+        let result = AdaptiveRate.computeRate(entries: entries, now: now)
         // Rate should be close to 0.8, spacing close to default
         XCTAssertEqual(result.rate, 0.8, accuracy: 0.05)
         XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing, accuracy: 600)
@@ -74,7 +76,7 @@ final class AdaptiveRateTests: XCTestCase {
             makeEntry(.sentimentDelivered, minutesAgo: 2880),
             makeEntry(.sentimentDelivered, minutesAgo: 2940),
         ]
-        let result = AdaptiveRate.computeRate(entries: entries)
+        let result = AdaptiveRate.computeRate(entries: entries, now: now)
         XCTAssertGreaterThan(result.rate, 0.5)
     }
 
@@ -86,7 +88,7 @@ final class AdaptiveRateTests: XCTestCase {
                 makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: Double(i * 10) - 1),
             ]
         }
-        let result = AdaptiveRate.computeRate(entries: entries)
+        let result = AdaptiveRate.computeRate(entries: entries, now: now)
         XCTAssertGreaterThanOrEqual(result.spacing, AdaptiveRate.minSpacing)
     }
 
@@ -95,7 +97,7 @@ final class AdaptiveRateTests: XCTestCase {
         let entries = (0..<20).map { i in
             makeEntry(.sentimentDelivered, minutesAgo: Double(i * 60))
         }
-        let result = AdaptiveRate.computeRate(entries: entries)
+        let result = AdaptiveRate.computeRate(entries: entries, now: now)
         XCTAssertLessThanOrEqual(result.spacing, AdaptiveRate.maxSpacing)
     }
 
@@ -104,7 +106,7 @@ final class AdaptiveRateTests: XCTestCase {
         let entries = [
             makeEntry(.sentimentDelivered, minutesAgo: 5),
         ]
-        let result = AdaptiveRate.computeRate(entries: entries)
+        let result = AdaptiveRate.computeRate(entries: entries, now: now)
         XCTAssertEqual(result.rate, AdaptiveRate.targetRate)
         XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing)
     }
@@ -116,7 +118,7 @@ final class AdaptiveRateTests: XCTestCase {
             makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 4),
             makeEntry(.sentimentDelivered, minutesAgo: 60),
         ]
-        let result = AdaptiveRate.computeRate(entries: entries)
+        let result = AdaptiveRate.computeRate(entries: entries, now: now)
         // With only ~2 weighted deliveries, should still be at defaults
         XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing)
     }
@@ -127,7 +129,7 @@ final class AdaptiveRateTests: XCTestCase {
             makeEntry(.notificationsScheduled(count: 3, nextTime: nil), minutesAgo: 20),
             makeEntry(.schedulingError(error: "test"), minutesAgo: 30),
         ]
-        let result = AdaptiveRate.computeRate(entries: entries)
+        let result = AdaptiveRate.computeRate(entries: entries, now: now)
         // No delivery/response data → defaults
         XCTAssertEqual(result.rate, AdaptiveRate.targetRate)
         XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing)

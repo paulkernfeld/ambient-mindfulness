@@ -14,7 +14,8 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @u
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        await logSyncAndTopUp(.sentimentDelivered)
+        // Delivery is logged at schedule time, not here.
+        // This just ensures foreground notifications are visible.
         return [.banner, .list, .sound]
     }
 
@@ -22,12 +23,14 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @u
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
-        guard response.actionIdentifier != UNNotificationDismissActionIdentifier,
-              response.actionIdentifier != UNNotificationDefaultActionIdentifier,
-              let sentiment = Sentiment(rawValue: response.actionIdentifier)
-        else { return }
+        guard response.actionIdentifier != UNNotificationDismissActionIdentifier else { return }
 
-        await logSyncAndTopUp(.sentimentResponse(sentiment: sentiment))
+        if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+            // User tapped notification body (no emoji button) — still engagement
+            await logSyncAndTopUp(.sentimentResponse(sentiment: .other))
+        } else if let sentiment = Sentiment(rawValue: response.actionIdentifier) {
+            await logSyncAndTopUp(.sentimentResponse(sentiment: sentiment))
+        }
     }
 
     @MainActor

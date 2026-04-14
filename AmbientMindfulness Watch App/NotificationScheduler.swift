@@ -94,6 +94,7 @@ enum NotificationScheduler {
 
             do {
                 try await center.add(request)
+                EntryLogger.log(.sentimentDelivered, in: context)
                 scheduledCount += 1
                 last = time
             } catch {
