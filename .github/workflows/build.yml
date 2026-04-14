@@ -47,9 +47,6 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
   deploy:
-    concurrency:
-      group: deploy-${{ github.ref }}
-      cancel-in-progress: true
     needs: build-and-test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: macos-15
