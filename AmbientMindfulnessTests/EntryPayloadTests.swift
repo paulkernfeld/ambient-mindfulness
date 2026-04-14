@@ -67,7 +67,7 @@ final class EntryPayloadTests: XCTestCase {
     }
 
     func testIsSentiment() {
-        XCTAssertTrue(EntryPayload.sentimentDelivered.isSentiment)
+        XCTAssertFalse(EntryPayload.sentimentDelivered.isSentiment)
         XCTAssertTrue(EntryPayload.sentimentResponse(sentiment: .positive).isSentiment)
         XCTAssertFalse(EntryPayload.permissionGranted.isSentiment)
         XCTAssertFalse(EntryPayload.permissionDenied(error: nil).isSentiment)

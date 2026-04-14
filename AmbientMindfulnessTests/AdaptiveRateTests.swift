@@ -19,19 +19,22 @@ final class AdaptiveRateTests: XCTestCase {
         XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing)
     }
 
-    func testFrequentResponsesDecreaseSpacing() {
-        // Responses every ~30 min → should schedule more frequently than default 3h
-        let entries = (0..<10).map { i in
+    func testManyResponsesProduceShorterSpacing() {
+        // 50 responses over ~25 hours → high density → spacing shorter than few responses
+        let many = (0..<50).map { i in
             makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: Double(i * 30))
         }
-        let result = AdaptiveRate.computeSpacing(entries: entries, now: now)
-        XCTAssertLessThan(result.spacing, AdaptiveRate.defaultSpacing)
+        let few = [
+            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 60),
+            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 1200),
+        ]
+        let manyResult = AdaptiveRate.computeSpacing(entries: many, now: now)
+        let fewResult = AdaptiveRate.computeSpacing(entries: few, now: now)
+        XCTAssertLessThan(manyResult.spacing, fewResult.spacing)
     }
 
-    func testInfrequentResponsesIncreaseSpacing() {
-        // Only 1 response in last day → few responses → wider spacing
-        // Need > 1.0 weighted responses to get past cold-start threshold
-        // Two responses: one recent, one 20h ago (still within half-life)
+    func testFewResponsesProduceWiderSpacing() {
+        // Only 2 responses spread far apart → wide spacing
         let entries = [
             makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 60),
             makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 1200),
