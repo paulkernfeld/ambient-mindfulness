@@ -22,3 +22,4 @@ XcodeGen/
 *.p8
 apple-issuer-id.txt
 apple-team-id.txt
+.ci-logs/

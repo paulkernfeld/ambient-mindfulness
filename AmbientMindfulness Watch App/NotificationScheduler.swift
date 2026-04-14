@@ -34,7 +34,7 @@ enum NotificationScheduler {
 
         // Ensure permission
         let settings = await center.notificationSettings()
-        guard settings.authorizationStatus == .authorized else {
+        if settings.authorizationStatus != .authorized {
             do {
                 let granted = try await center.requestAuthorization(options: [.alert, .sound])
                 if granted {
