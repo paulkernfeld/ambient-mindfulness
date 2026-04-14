@@ -17,6 +17,8 @@ final class AdaptiveRateTests: XCTestCase {
         let result = AdaptiveRate.computeSpacing(entries: [], now: now)
         XCTAssertNil(result.responseInterval)
         XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing)
+        XCTAssertTrue(result.isDefault)
+        XCTAssertEqual(result.weightedResponses, 0.0)
     }
 
     func testManyResponsesProduceShorterSpacing() {
@@ -34,24 +36,24 @@ final class AdaptiveRateTests: XCTestCase {
     }
 
     func testFewResponsesProduceWiderSpacing() {
-        // Only 2 responses spread far apart → wide spacing
-        let entries = [
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 60),
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 1200),
-        ]
+        // 6 responses spread over 2 days → just above threshold, wide spacing
+        let entries = (0..<6).map { i in
+            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: Double(i * 480))
+        }
         let result = AdaptiveRate.computeSpacing(entries: entries, now: now)
+        XCTAssertFalse(result.isDefault)
         XCTAssertGreaterThan(result.spacing, AdaptiveRate.defaultSpacing)
     }
 
     func testColdStartUsesDefaults() {
-        // One response → weighted count < 1.0 threshold... actually one recent response
-        // has weight ≈ 1.0, so let's use an old one
-        let entries = [
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 2000),
-        ]
+        // 3 recent responses → weighted count ~3, under threshold of 5
+        let entries = (0..<3).map { i in
+            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: Double(i * 60))
+        }
         let result = AdaptiveRate.computeSpacing(entries: entries, now: now)
         XCTAssertNil(result.responseInterval)
         XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing)
+        XCTAssertTrue(result.isDefault)
     }
 
     func testRecentResponsesWeighMore() {

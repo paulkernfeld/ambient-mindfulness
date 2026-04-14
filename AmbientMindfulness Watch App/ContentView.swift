@@ -8,8 +8,7 @@ struct ContentView: View {
     @State private var permissionStatus: String = "..."
     @State private var pendingCount: Int = 0
     @State private var nextNotification: Date?
-    @State private var responseRate: String = "..."
-    @State private var spacing: String = "..."
+    @State private var adaptiveInfo: String = "..."
 
     var body: some View {
         ScrollView {
@@ -47,9 +46,10 @@ struct ContentView: View {
                 .font(.headline)
 
             LabeledContent("Permission", value: permissionStatus)
-            LabeledContent("Rate", value: responseRate)
-            LabeledContent("Spacing", value: spacing)
             LabeledContent("Pending", value: "\(pendingCount)")
+            Text(adaptiveInfo)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
 
             if let next = nextNotification {
                 LabeledContent("Next") {
@@ -111,14 +111,15 @@ struct ContentView: View {
             .min()
 
         let result = AdaptiveRate.computeSpacing(entries: Array(entries))
-        if let interval = result.responseInterval {
-            let rMins = Int(interval / 60)
-            responseRate = rMins >= 60 ? "1/\(rMins / 60)h\(rMins % 60)m" : "1/\(rMins)m"
-        } else {
-            responseRate = "no data"
+        let spacingMins = Int(result.spacing / 60)
+        let spacingStr = spacingMins >= 60 ? "\(spacingMins / 60)h \(spacingMins % 60)m" : "\(spacingMins)m"
+        if result.isDefault {
+            adaptiveInfo = "Spacing: \(spacingStr) (default, \(String(format: "%.1f", result.weightedResponses)) weighted responses, need >1)"
+        } else if let interval = result.responseInterval {
+            let intMins = Int(interval / 60)
+            let intStr = intMins >= 60 ? "\(intMins / 60)h \(intMins % 60)m" : "\(intMins)m"
+            adaptiveInfo = "Spacing: \(spacingStr) = \(intStr) interval / \(AdaptiveRate.targetRate) target (\(String(format: "%.1f", result.weightedResponses)) responses)"
         }
-        let mins = Int(result.spacing / 60)
-        spacing = mins >= 60 ? "\(mins / 60)h \(mins % 60)m" : "\(mins)m"
     }
 
 }

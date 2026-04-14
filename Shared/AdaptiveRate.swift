@@ -11,8 +11,10 @@ enum AdaptiveRate {
     static let bufferSize = 3
 
     struct RateResult {
-        let responseInterval: TimeInterval? // average time between responses (nil = no data)
+        let weightedResponses: Double // total weighted response count
+        let responseInterval: TimeInterval? // estimated avg time between responses (nil = no data)
         let spacing: TimeInterval
+        let isDefault: Bool // true if using defaults (not enough data)
     }
 
     /// Compute notification spacing from response frequency.
@@ -34,9 +36,10 @@ enum AdaptiveRate {
             }
         }
 
-        guard weightedResponses > 1.0 else {
-            // Not enough data — use defaults
-            return RateResult(responseInterval: nil, spacing: defaultSpacing)
+        // Need ~5 weighted responses before departing from the default 5/day.
+        // This means roughly a day of data at the default rate before adapting.
+        guard weightedResponses > 5.0 else {
+            return RateResult(weightedResponses: weightedResponses, responseInterval: nil, spacing: defaultSpacing, isDefault: true)
         }
 
         // Effective time window: how much "time" the weights represent
@@ -48,7 +51,7 @@ enum AdaptiveRate {
         let spacing = responseInterval / targetRate
         let clampedSpacing = min(max(spacing, minSpacing), maxSpacing)
 
-        return RateResult(responseInterval: responseInterval, spacing: clampedSpacing)
+        return RateResult(weightedResponses: weightedResponses, responseInterval: responseInterval, spacing: clampedSpacing, isDefault: false)
     }
 
     /// Compute the next notification time after `after`, skipping sleep hours.

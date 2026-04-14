@@ -9,7 +9,7 @@ struct LogView: View {
             List(entries) { entry in
                 HStack {
                     if let payload = entry.payload {
-                        Text(payload.emoji)
+                        Text(payload.label)
                     }
                     Spacer()
                     VStack(alignment: .trailing) {
