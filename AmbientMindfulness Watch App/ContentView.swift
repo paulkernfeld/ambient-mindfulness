@@ -110,8 +110,13 @@ struct ContentView: View {
             .compactMap { ($0.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() }
             .min()
 
-        let result = AdaptiveRate.computeRate(entries: Array(entries))
-        responseRate = String(format: "%.0f%%", result.rate * 100)
+        let result = AdaptiveRate.computeSpacing(entries: Array(entries))
+        if let interval = result.responseInterval {
+            let rMins = Int(interval / 60)
+            responseRate = rMins >= 60 ? "1/\(rMins / 60)h\(rMins % 60)m" : "1/\(rMins)m"
+        } else {
+            responseRate = "no data"
+        }
         let mins = Int(result.spacing / 60)
         spacing = mins >= 60 ? "\(mins / 60)h \(mins % 60)m" : "\(mins)m"
     }

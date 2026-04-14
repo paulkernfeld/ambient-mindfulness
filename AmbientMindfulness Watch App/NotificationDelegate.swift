@@ -14,8 +14,8 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @u
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        // Delivery is logged at schedule time, not here.
-        // This just ensures foreground notifications are visible.
+        // Log delivery for debugging (not used in rate computation)
+        await logAndSync(.sentimentDelivered)
         return [.banner, .list, .sound]
     }
 
@@ -34,10 +34,15 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @u
     }
 
     @MainActor
-    private func logSyncAndTopUp(_ payload: EntryPayload) {
+    private func logAndSync(_ payload: EntryPayload) {
         let context = ModelContext(modelContainer)
         EntryLogger.log(payload, in: context)
         watchSync?.sendAllEntries()
+    }
+
+    @MainActor
+    private func logSyncAndTopUp(_ payload: EntryPayload) {
+        logAndSync(payload)
         Task {
             await NotificationScheduler.topUp(modelContainer: modelContainer)
         }

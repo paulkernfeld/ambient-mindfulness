@@ -11,14 +11,15 @@ enum AdaptiveRate {
     static let bufferSize = 3
 
     struct RateResult {
-        let rate: Double // 0...1
+        let responseInterval: TimeInterval? // average time between responses (nil = no data)
         let spacing: TimeInterval
     }
 
-    /// Compute time-weighted response rate from entry log, derive notification spacing.
-    static func computeRate(entries: [MindfulEntry], now: Date = Date()) -> RateResult {
+    /// Compute notification spacing from response frequency.
+    /// Only counts user responses — no need to track deliveries.
+    /// If user responds every 15min, and target is 80%, spacing = 15min * 0.8 = 12min.
+    static func computeSpacing(entries: [MindfulEntry], now: Date = Date()) -> RateResult {
         let ln2 = log(2.0)
-        var weightedDeliveries = 0.0
         var weightedResponses = 0.0
 
         for entry in entries {
@@ -27,38 +28,35 @@ enum AdaptiveRate {
             if age < 0 { continue }
             let weight = exp(-ln2 * age / halfLife)
 
-            switch payload {
-            case .sentimentDelivered:
-                weightedDeliveries += weight
-            case .sentimentResponse:
+            if case .sentimentResponse = payload {
                 weightedResponses += weight
-            default:
-                continue
             }
         }
 
-        guard weightedDeliveries > 2.0 else {
-            // Not enough data — use defaults (avoids cold-start death spiral)
-            return RateResult(rate: targetRate, spacing: defaultSpacing)
+        guard weightedResponses > 1.0 else {
+            // Not enough data — use defaults
+            return RateResult(responseInterval: nil, spacing: defaultSpacing)
         }
 
-        let rate = min(weightedResponses / weightedDeliveries, 1.0)
-        let clampedRate = max(rate, 0.05) // floor to prevent spacing explosion
-        let spacing = defaultSpacing * targetRate / clampedRate
+        // Effective time window: how much "time" the weights represent
+        // For exponential decay, the effective window ≈ halfLife / ln(2)
+        // But we want the interval between responses, which is:
+        // effectiveWindow / weightedResponses
+        let effectiveWindow = halfLife / ln2
+        let responseInterval = effectiveWindow / weightedResponses
+        let spacing = responseInterval * targetRate
         let clampedSpacing = min(max(spacing, minSpacing), maxSpacing)
 
-        return RateResult(rate: rate, spacing: clampedSpacing)
+        return RateResult(responseInterval: responseInterval, spacing: clampedSpacing)
     }
 
-    /// Given a spacing, compute the next notification time after `after`,
-    /// skipping sleep hours.
+    /// Compute the next notification time after `after`, skipping sleep hours.
     static func nextTime(after: Date, spacing: TimeInterval) -> Date {
         let calendar = Calendar.current
         var candidate = after.addingTimeInterval(spacing)
 
         let hour = calendar.component(.hour, from: candidate)
         if hour >= sleepHour || hour < wakeHour {
-            // Push to next wake time
             let nextDay = hour >= sleepHour
                 ? calendar.date(byAdding: .day, value: 1, to: candidate)!
                 : candidate

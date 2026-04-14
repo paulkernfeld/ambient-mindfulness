@@ -58,7 +58,7 @@ enum NotificationScheduler {
         // Compute adaptive spacing from entry log
         let descriptor = FetchDescriptor<MindfulEntry>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
         let entries = (try? context.fetch(descriptor)) ?? []
-        let result = AdaptiveRate.computeRate(entries: entries)
+        let result = AdaptiveRate.computeSpacing(entries: entries)
 
         // Find the latest scheduled time (or now)
         let latestPending = sentimentPending
@@ -94,7 +94,6 @@ enum NotificationScheduler {
 
             do {
                 try await center.add(request)
-                EntryLogger.log(.sentimentDelivered, in: context)
                 scheduledCount += 1
                 last = time
             } catch {

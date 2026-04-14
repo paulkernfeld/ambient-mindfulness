@@ -3,7 +3,7 @@ import XCTest
 
 final class AdaptiveRateTests: XCTestCase {
 
-    private let now = Date(timeIntervalSince1970: 1_700_000_000) // fixed reference time
+    private let now = Date(timeIntervalSince1970: 1_700_000_000)
 
     private func makeEntry(_ payload: EntryPayload, minutesAgo: Double) -> MindfulEntry {
         let data = try! JSONEncoder().encode(payload)
@@ -14,124 +14,85 @@ final class AdaptiveRateTests: XCTestCase {
     }
 
     func testNoDataReturnsDefaults() {
-        let result = AdaptiveRate.computeRate(entries: [], now: now)
-        XCTAssertEqual(result.rate, AdaptiveRate.targetRate)
+        let result = AdaptiveRate.computeSpacing(entries: [], now: now)
+        XCTAssertNil(result.responseInterval)
         XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing)
     }
 
-    func testPerfectResponseRateDecreasesSpacing() {
-        // All deliveries have responses → rate > target → spacing decreases
-        let entries = [
-            makeEntry(.sentimentDelivered, minutesAgo: 60),
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 59),
-            makeEntry(.sentimentDelivered, minutesAgo: 120),
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 119),
-        ]
-        let result = AdaptiveRate.computeRate(entries: entries, now: now)
-        XCTAssertGreaterThan(result.rate, AdaptiveRate.targetRate)
+    func testFrequentResponsesDecreaseSpacing() {
+        // Responses every ~30 min → should schedule more frequently than default 3h
+        let entries = (0..<10).map { i in
+            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: Double(i * 30))
+        }
+        let result = AdaptiveRate.computeSpacing(entries: entries, now: now)
         XCTAssertLessThan(result.spacing, AdaptiveRate.defaultSpacing)
     }
 
-    func testZeroResponseRateIncreasesSpacing() {
-        // Deliveries but no responses → rate < target → spacing increases
+    func testInfrequentResponsesIncreaseSpacing() {
+        // Only 1 response in last day → few responses → wider spacing
+        // Need > 1.0 weighted responses to get past cold-start threshold
+        // Two responses: one recent, one 20h ago (still within half-life)
         let entries = [
-            makeEntry(.sentimentDelivered, minutesAgo: 60),
-            makeEntry(.sentimentDelivered, minutesAgo: 120),
-            makeEntry(.sentimentDelivered, minutesAgo: 180),
+            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 60),
+            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 1200),
         ]
-        let result = AdaptiveRate.computeRate(entries: entries, now: now)
-        XCTAssertLessThan(result.rate, AdaptiveRate.targetRate)
+        let result = AdaptiveRate.computeSpacing(entries: entries, now: now)
         XCTAssertGreaterThan(result.spacing, AdaptiveRate.defaultSpacing)
     }
 
-    func testExactTargetRateKeepsDefaultSpacing() {
-        // 4 out of 5 deliveries responded to (80%) at same recency
+    func testColdStartUsesDefaults() {
+        // One response → weighted count < 1.0 threshold... actually one recent response
+        // has weight ≈ 1.0, so let's use an old one
         let entries = [
-            makeEntry(.sentimentDelivered, minutesAgo: 10),
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 9),
-            makeEntry(.sentimentDelivered, minutesAgo: 20),
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 19),
-            makeEntry(.sentimentDelivered, minutesAgo: 30),
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 29),
-            makeEntry(.sentimentDelivered, minutesAgo: 40),
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 39),
-            makeEntry(.sentimentDelivered, minutesAgo: 50),
-            // no response for this one
+            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 2000),
         ]
-        let result = AdaptiveRate.computeRate(entries: entries, now: now)
-        // Rate should be close to 0.8, spacing close to default
-        XCTAssertEqual(result.rate, 0.8, accuracy: 0.05)
-        XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing, accuracy: 600)
+        let result = AdaptiveRate.computeSpacing(entries: entries, now: now)
+        XCTAssertNil(result.responseInterval)
+        XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing)
     }
 
-    func testRecentEntriesWeighMoreThanOld() {
-        // Recent: all responses. Old: no responses.
-        // Rate should be > 0.5 (tilted toward recent)
-        let entries = [
-            makeEntry(.sentimentDelivered, minutesAgo: 30),
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 29),
-            makeEntry(.sentimentDelivered, minutesAgo: 60),
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 59),
-            // Old entries: delivered but no response (2 days ago)
-            makeEntry(.sentimentDelivered, minutesAgo: 2880),
-            makeEntry(.sentimentDelivered, minutesAgo: 2940),
+    func testRecentResponsesWeighMore() {
+        // Many old responses (2 days ago) + few recent → spacing should reflect recent frequency
+        let old = (0..<20).map { i in
+            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 2880 + Double(i * 30))
+        }
+        let recent = [
+            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 30),
+            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 60),
         ]
-        let result = AdaptiveRate.computeRate(entries: entries, now: now)
-        XCTAssertGreaterThan(result.rate, 0.5)
+        let result = AdaptiveRate.computeSpacing(entries: old + recent, now: now)
+        // Recent responses contribute more weight → spacing should be shorter than
+        // if we only had old infrequent data
+        let oldOnly = AdaptiveRate.computeSpacing(entries: old, now: now)
+        XCTAssertLessThan(result.spacing, oldOnly.spacing)
     }
 
     func testSpacingClampedToMin() {
-        // Extremely high response rate shouldn't produce sub-minute spacing
-        let entries = (0..<100).flatMap { i -> [MindfulEntry] in
-            [
-                makeEntry(.sentimentDelivered, minutesAgo: Double(i * 10)),
-                makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: Double(i * 10) - 1),
-            ]
+        let entries = (0..<200).map { i in
+            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: Double(i))
         }
-        let result = AdaptiveRate.computeRate(entries: entries, now: now)
+        let result = AdaptiveRate.computeSpacing(entries: entries, now: now)
         XCTAssertGreaterThanOrEqual(result.spacing, AdaptiveRate.minSpacing)
     }
 
     func testSpacingClampedToMax() {
-        // Very low response rate shouldn't produce multi-day spacing
-        let entries = (0..<20).map { i in
-            makeEntry(.sentimentDelivered, minutesAgo: Double(i * 60))
-        }
-        let result = AdaptiveRate.computeRate(entries: entries, now: now)
+        // Very few responses, far apart
+        let entries = [
+            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 60),
+            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 1380),
+        ]
+        let result = AdaptiveRate.computeSpacing(entries: entries, now: now)
         XCTAssertLessThanOrEqual(result.spacing, AdaptiveRate.maxSpacing)
     }
 
-    func testColdStartUsesDefaults() {
-        // One delivery, no response — should use defaults, not jump to max spacing
+    func testNonResponseEntriesIgnored() {
         let entries = [
-            makeEntry(.sentimentDelivered, minutesAgo: 5),
+            makeEntry(.sentimentDelivered, minutesAgo: 10),
+            makeEntry(.permissionGranted, minutesAgo: 20),
+            makeEntry(.notificationsScheduled(count: 3, nextTime: nil), minutesAgo: 30),
         ]
-        let result = AdaptiveRate.computeRate(entries: entries, now: now)
-        XCTAssertEqual(result.rate, AdaptiveRate.targetRate)
-        XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing)
-    }
-
-    func testFewDeliveriesStillUsesDefaults() {
-        // Two deliveries, one response — weighted deliveries still under threshold
-        let entries = [
-            makeEntry(.sentimentDelivered, minutesAgo: 5),
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 4),
-            makeEntry(.sentimentDelivered, minutesAgo: 60),
-        ]
-        let result = AdaptiveRate.computeRate(entries: entries, now: now)
-        // With only ~2 weighted deliveries, should still be at defaults
-        XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing)
-    }
-
-    func testNonSentimentEntriesIgnored() {
-        let entries = [
-            makeEntry(.permissionGranted, minutesAgo: 10),
-            makeEntry(.notificationsScheduled(count: 3, nextTime: nil), minutesAgo: 20),
-            makeEntry(.schedulingError(error: "test"), minutesAgo: 30),
-        ]
-        let result = AdaptiveRate.computeRate(entries: entries, now: now)
-        // No delivery/response data → defaults
-        XCTAssertEqual(result.rate, AdaptiveRate.targetRate)
+        let result = AdaptiveRate.computeSpacing(entries: entries, now: now)
+        XCTAssertNil(result.responseInterval)
         XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing)
     }
 
@@ -150,7 +111,6 @@ final class AdaptiveRateTests: XCTestCase {
         let calendar = Calendar.current
         let lateNight = calendar.date(bySettingHour: 21, minute: 30, second: 0, of: Date())!
         let next = AdaptiveRate.nextTime(after: lateNight, spacing: 3600)
-        // 21:30 + 1h = 22:30 which is during sleep → should push to next day's wake hour
         let hour = calendar.component(.hour, from: next)
         XCTAssertEqual(hour, AdaptiveRate.wakeHour)
     }
