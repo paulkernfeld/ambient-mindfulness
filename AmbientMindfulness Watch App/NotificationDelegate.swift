@@ -14,7 +14,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @u
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        await logAndSync(.sentimentDelivered)
+        await logSyncAndTopUp(.sentimentDelivered)
         return [.banner, .list, .sound]
     }
 
@@ -27,13 +27,16 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @u
               let sentiment = Sentiment(rawValue: response.actionIdentifier)
         else { return }
 
-        await logAndSync(.sentimentResponse(sentiment: sentiment))
+        await logSyncAndTopUp(.sentimentResponse(sentiment: sentiment))
     }
 
     @MainActor
-    private func logAndSync(_ payload: EntryPayload) {
+    private func logSyncAndTopUp(_ payload: EntryPayload) {
         let context = ModelContext(modelContainer)
         EntryLogger.log(payload, in: context)
         watchSync?.sendAllEntries()
+        Task {
+            await NotificationScheduler.topUp(modelContainer: modelContainer)
+        }
     }
 }

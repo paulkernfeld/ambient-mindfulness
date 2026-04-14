@@ -8,6 +8,8 @@ struct ContentView: View {
     @State private var permissionStatus: String = "..."
     @State private var pendingCount: Int = 0
     @State private var nextNotification: Date?
+    @State private var responseRate: String = "..."
+    @State private var spacing: String = "..."
 
     var body: some View {
         ScrollView {
@@ -45,6 +47,8 @@ struct ContentView: View {
                 .font(.headline)
 
             LabeledContent("Permission", value: permissionStatus)
+            LabeledContent("Rate", value: responseRate)
+            LabeledContent("Spacing", value: spacing)
             LabeledContent("Pending", value: "\(pendingCount)")
 
             if let next = nextNotification {
@@ -105,6 +109,11 @@ struct ContentView: View {
         nextNotification = pending
             .compactMap { ($0.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() }
             .min()
+
+        let result = AdaptiveRate.computeRate(entries: Array(entries))
+        responseRate = String(format: "%.0f%%", result.rate * 100)
+        let mins = Int(result.spacing / 60)
+        spacing = mins >= 60 ? "\(mins / 60)h \(mins % 60)m" : "\(mins)m"
     }
 
 }

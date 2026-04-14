@@ -4,7 +4,6 @@ import SwiftData
 
 enum NotificationScheduler {
     static let categoryIdentifier = "SENTIMENT_CHECK"
-    private static let daysToSchedule = 7
 
     static func registerCategory() {
         let actions = Sentiment.allCases.map { sentiment in
@@ -25,70 +24,86 @@ enum NotificationScheduler {
         UNUserNotificationCenter.current().setNotificationCategories([category])
     }
 
+    /// Top up pending notifications to the buffer size.
+    /// Safe to call from any trigger (app open, response, background).
+    /// Idempotent — does nothing if buffer is already full.
     @MainActor
-    static func scheduleUpcoming(modelContainer: ModelContainer) async {
+    static func topUp(modelContainer: ModelContainer) async {
         let context = ModelContext(modelContainer)
         let center = UNUserNotificationCenter.current()
 
-        do {
-            let granted = try await center.requestAuthorization(options: [.alert, .sound])
-            if granted {
-                EntryLogger.log(.permissionGranted, in: context)
-            } else {
-                EntryLogger.log(.permissionDenied(error: nil), in: context)
+        // Ensure permission
+        let settings = await center.notificationSettings()
+        guard settings.authorizationStatus == .authorized else {
+            do {
+                let granted = try await center.requestAuthorization(options: [.alert, .sound])
+                if granted {
+                    EntryLogger.log(.permissionGranted, in: context)
+                } else {
+                    EntryLogger.log(.permissionDenied(error: nil), in: context)
+                    return
+                }
+            } catch {
+                EntryLogger.log(.permissionDenied(error: error.localizedDescription), in: context)
                 return
             }
-        } catch {
-            EntryLogger.log(.permissionDenied(error: error.localizedDescription), in: context)
-            return
         }
 
-        center.removeAllPendingNotificationRequests()
+        // Check how many are already pending
+        let pending = await center.pendingNotificationRequests()
+        let sentimentPending = pending.filter { $0.identifier.hasPrefix("sentiment-") }
+        let needed = AdaptiveRate.bufferSize - sentimentPending.count
+        guard needed > 0 else { return }
 
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
+        // Compute adaptive spacing from entry log
+        let descriptor = FetchDescriptor<MindfulEntry>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
+        let entries = (try? context.fetch(descriptor)) ?? []
+        let result = AdaptiveRate.computeRate(entries: entries)
+
+        // Find the latest scheduled time (or now)
+        let latestPending = sentimentPending
+            .compactMap { ($0.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() }
+            .max()
+        var last = max(latestPending ?? Date(), Date())
+
+        // Schedule up to the buffer size
         var scheduledCount = 0
-        var firstTime: Date?
+        for i in 0..<needed {
+            let time = AdaptiveRate.nextTime(after: last, spacing: result.spacing)
 
-        for dayOffset in 0..<daysToSchedule {
-            guard let date = calendar.date(byAdding: .day, value: dayOffset, to: today) else { continue }
-            let times = DayScheduler.promptTimes(for: date)
+            let content = UNMutableNotificationContent()
+            content.title = "How are you?"
+            content.body = "Tap to check in"
+            content.categoryIdentifier = categoryIdentifier
+            content.sound = .default
 
-            for (index, time) in times.enumerated() {
-                guard time > Date() else { continue }
+            let components = Calendar.current.dateComponents(
+                [.year, .month, .day, .hour, .minute, .second],
+                from: time
+            )
+            let trigger = UNCalendarNotificationTrigger(
+                dateMatching: components,
+                repeats: false
+            )
 
-                let content = UNMutableNotificationContent()
-                content.title = "How are you?"
-                content.body = "Tap to check in"
-                content.categoryIdentifier = categoryIdentifier
-                content.sound = .default
+            let request = UNNotificationRequest(
+                identifier: "sentiment-\(Int(time.timeIntervalSince1970))-\(i)",
+                content: content,
+                trigger: trigger
+            )
 
-                let components = calendar.dateComponents(
-                    [.year, .month, .day, .hour, .minute, .second],
-                    from: time
-                )
-                let trigger = UNCalendarNotificationTrigger(
-                    dateMatching: components,
-                    repeats: false
-                )
-
-                let request = UNNotificationRequest(
-                    identifier: "sentiment-d\(dayOffset)-\(index)",
-                    content: content,
-                    trigger: trigger
-                )
-
-                do {
-                    try await center.add(request)
-                    scheduledCount += 1
-                    if firstTime == nil { firstTime = time }
-                } catch {
-                    EntryLogger.log(.schedulingError(error: error.localizedDescription), in: context)
-                }
+            do {
+                try await center.add(request)
+                scheduledCount += 1
+                last = time
+            } catch {
+                EntryLogger.log(.schedulingError(error: error.localizedDescription), in: context)
             }
         }
 
-        EntryLogger.log(.notificationsScheduled(count: scheduledCount, nextTime: firstTime), in: context)
+        if scheduledCount > 0 {
+            EntryLogger.log(.notificationsScheduled(count: scheduledCount, nextTime: last), in: context)
+        }
     }
 
     @MainActor
