@@ -11,9 +11,9 @@ enum EntryPayload: Codable, Equatable {
 
     var isSentiment: Bool {
         switch self {
-        case .sentimentDelivered, .sentimentResponse: return true
-        case .permissionGranted, .permissionDenied, .notificationsScheduled,
-             .schedulingError, .testNotificationScheduled: return false
+        case .sentimentResponse: return true
+        case .sentimentDelivered, .permissionGranted, .permissionDenied,
+             .notificationsScheduled, .schedulingError, .testNotificationScheduled: return false
         }
     }
 

@@ -56,7 +56,8 @@ enum NotificationScheduler {
         guard needed > 0 else { return }
 
         // Compute adaptive spacing from entry log
-        let descriptor = FetchDescriptor<MindfulEntry>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
+        var descriptor = FetchDescriptor<MindfulEntry>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
+        descriptor.fetchLimit = 200
         let entries = (try? context.fetch(descriptor)) ?? []
         let result = AdaptiveRate.computeSpacing(entries: entries)
 
