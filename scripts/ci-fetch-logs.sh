@@ -21,6 +21,7 @@ for JOB_ID in $(gh run view "$RUN_ID" --json jobs --jq '.jobs[].databaseId'); do
 done
 
 echo "Logs saved to .ci-logs/"
-echo "  full.log    $(wc -l < "$LOG_DIR/full.log") lines"
-echo "  failed.log  $(wc -l < "$LOG_DIR/failed.log") lines"
+for f in "$LOG_DIR"/*.log; do
+  [ -f "$f" ] && echo "  $(basename "$f")	$(wc -l < "$f") lines"
+done
 echo "  summary.json"

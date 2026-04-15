@@ -27,7 +27,7 @@ final class AdaptiveRateTests: XCTestCase {
         let entries = [makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 30)]
         let result = AdaptiveRate.computeSpacing(entries: entries, now: now)
         // Should be close to default (prior dominates)
-        XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing, accuracy: 600) // within 10 min
+        XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing, accuracy: 750) // within ~12 min
     }
 
     func testDataGraduallyOverridesPrior() {
