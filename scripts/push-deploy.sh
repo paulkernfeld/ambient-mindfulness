@@ -1,19 +1,33 @@
 #!/bin/bash
 # Push to remote and wait for CI to pass or fail.
+# Tracks by commit SHA to avoid race conditions.
 # Usage: push-deploy.sh
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SHA=$(git rev-parse HEAD)
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 
-echo "Pushing to remote..."
+echo "Pushing $SHA to remote..."
 git push
 
-# Brief pause for GitHub to register the run
-sleep 3
+echo "Waiting for CI run for $SHA..."
+RUN_ID=""
+for i in $(seq 1 40); do
+  RUN_ID=$(gh run list --json databaseId,headSha --limit 5 -q ".[] | select(.headSha==\"$SHA\") | .databaseId")
+  if [ -n "$RUN_ID" ]; then
+    break
+  fi
+  sleep 3
+done
 
-RUN_ID=$(gh run list --limit 1 --json databaseId -q '.[0].databaseId')
+if [ -z "$RUN_ID" ]; then
+  echo "ERROR: No CI run found for $SHA after 2 minutes"
+  exit 1
+fi
+
 echo "CI run: $RUN_ID"
-echo "https://github.com/$(gh repo view --json nameWithOwner -q .nameWithOwner)/actions/runs/$RUN_ID"
+echo "https://github.com/$REPO/actions/runs/$RUN_ID"
 echo ""
 
 exec "$SCRIPT_DIR/ci-wait.sh" "$RUN_ID" 15
