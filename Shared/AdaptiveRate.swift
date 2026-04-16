@@ -23,22 +23,23 @@ enum AdaptiveRate {
         let halfLife: TimeInterval
         let weightedResponses: Double
         let priorCount: Double
-        let spacing: TimeInterval
+        let rate: Double // notifications per second for this scale
     }
 
     struct RateResult {
         let scales: [ScaleResult]
+        let blendedRate: Double // weighted sum of per-scale rates
         let spacing: TimeInterval
     }
 
-    /// Compute notification spacing by blending multiple EWMA timescales.
+    /// Compute notification spacing by blending rates from multiple EWMA timescales.
     ///
-    /// Each timescale independently computes spacing via the Bayesian formula
-    /// (its own effective window and prior). Results are blended by weight.
-    /// With no data, every timescale produces exactly defaultSpacing.
+    /// Each timescale computes a rate (notifications/sec) from its own effective
+    /// window and Bayesian prior. Rates are blended by weight, then converted to
+    /// spacing once at the end. With no data, every scale produces 1/defaultSpacing.
     static func computeSpacing(responseAges ages: [TimeInterval]) -> RateResult {
         let ln2 = log(2.0)
-        var blendedSpacing = 0.0
+        var blendedRate = 0.0
         var scaleResults: [ScaleResult] = []
 
         for scale in timescales {
@@ -49,25 +50,24 @@ enum AdaptiveRate {
 
             let effectiveWindow = scale.halfLife / ln2
             let priorCount = effectiveWindow / (defaultSpacing * targetRate)
-            let effectiveResponses = weightedResponses + priorCount
-            let responseInterval = effectiveWindow / effectiveResponses
-            let spacing = responseInterval / targetRate
+            let rate = targetRate * (weightedResponses + priorCount) / effectiveWindow
 
             scaleResults.append(ScaleResult(
                 halfLife: scale.halfLife,
                 weightedResponses: weightedResponses,
                 priorCount: priorCount,
-                spacing: spacing
+                rate: rate
             ))
 
-            blendedSpacing += spacing * scale.weight
+            blendedRate += rate * scale.weight
         }
 
-        let clampedSpacing = min(max(blendedSpacing, minSpacing), maxSpacing)
+        let spacing = min(max(1.0 / blendedRate, minSpacing), maxSpacing)
 
         return RateResult(
             scales: scaleResults,
-            spacing: clampedSpacing
+            blendedRate: blendedRate,
+            spacing: spacing
         )
     }
 

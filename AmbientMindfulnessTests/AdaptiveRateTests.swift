@@ -15,9 +15,10 @@ final class AdaptiveRateTests: XCTestCase {
         let result = AdaptiveRate.computeSpacing(responseAges: [])
         XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing, accuracy: 0.001)
         XCTAssertEqual(result.scales.count, AdaptiveRate.timescales.count)
+        let expectedRate = 1.0 / AdaptiveRate.defaultSpacing
         for s in result.scales {
             XCTAssertEqual(s.weightedResponses, 0)
-            XCTAssertEqual(s.spacing, AdaptiveRate.defaultSpacing, accuracy: 0.001)
+            XCTAssertEqual(s.rate, expectedRate, accuracy: 0.0001)
         }
     }
 
@@ -25,7 +26,7 @@ final class AdaptiveRateTests: XCTestCase {
         let result = AdaptiveRate.computeSpacing(responseAges: ages((0..<5).map { Double($0 * 6) }))
         let shortScale = result.scales.first { $0.halfLife == 1 * 3600 }!
         let longScale = result.scales.first { $0.halfLife == 24 * 3600 }!
-        XCTAssertLessThan(shortScale.spacing, longScale.spacing)
+        XCTAssertGreaterThan(shortScale.rate, longScale.rate)
         XCTAssertLessThan(shortScale.priorCount, longScale.priorCount)
     }
 

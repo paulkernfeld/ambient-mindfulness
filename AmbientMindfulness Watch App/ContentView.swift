@@ -129,11 +129,13 @@ struct ContentView: View {
             let m = Int(t / 60)
             return m >= 60 ? "\(m / 60)h \(m % 60)m" : "\(m)m"
         }
-        var lines = ["Spacing: \(fmt(r.spacing))"]
+        let perDay = r.blendedRate * 86400
+        var lines = ["Spacing: \(fmt(r.spacing)) (\(String(format: "%.1f", perDay))/day)"]
         for s in r.scales {
             let hlLabel = s.halfLife >= 3600 ? "\(Int(s.halfLife / 3600))h" : "\(Int(s.halfLife / 60))m"
             let pct = s.weightedResponses / (s.weightedResponses + s.priorCount) * 100
-            lines.append("  \(hlLabel): \(fmt(s.spacing)) (\(String(format: "%.1f", s.weightedResponses))r, \(String(format: "%.0f", pct))% data)")
+            let sPerDay = s.rate * 86400
+            lines.append("  \(hlLabel): \(String(format: "%.1f", sPerDay))/day (\(String(format: "%.1f", s.weightedResponses))r, \(String(format: "%.0f", pct))% data)")
         }
         adaptiveInfo = lines.joined(separator: "\n")
     }

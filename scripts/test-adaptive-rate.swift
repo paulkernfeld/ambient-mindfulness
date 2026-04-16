@@ -16,20 +16,20 @@ func checkEq(_ a: Double, _ b: Double, accuracy: Double, _ msg: String, line: In
     else { failed += 1; print("FAIL (\(line)): \(msg): \(a) != \(b) +/- \(accuracy)") }
 }
 
-// Compute expected spacing from first principles — same blending as production.
+// Compute expected spacing from first principles — blend rates, convert once.
 let ln2 = log(2.0)
 
 func expectedSpacingUnclamped(_ ages: [TimeInterval]) -> Double {
-    var blended = 0.0
+    var blendedRate = 0.0
     for scale in AdaptiveRate.timescales {
         var w = 0.0
         for age in ages { w += exp(-ln2 * age / scale.halfLife) }
         let ew = scale.halfLife / ln2
         let prior = ew / (AdaptiveRate.defaultSpacing * AdaptiveRate.targetRate)
-        let spacing = ew / (w + prior) / AdaptiveRate.targetRate
-        blended += spacing * scale.weight
+        let rate = AdaptiveRate.targetRate * (w + prior) / ew
+        blendedRate += rate * scale.weight
     }
-    return blended
+    return 1.0 / blendedRate
 }
 
 func expectedSpacing(_ ages: [TimeInterval]) -> Double {
@@ -43,9 +43,10 @@ func testNoData() {
     let r = AdaptiveRate.computeSpacing(responseAges: [])
     checkEq(r.spacing, AdaptiveRate.defaultSpacing, accuracy: 0.001, "no data → default spacing")
     check(r.scales.count == 2, "two timescales")
+    // Each scale's rate should equal 1/defaultSpacing
+    let expectedRate = 1.0 / AdaptiveRate.defaultSpacing
     for s in r.scales {
-        checkEq(s.spacing, AdaptiveRate.defaultSpacing, accuracy: 0.001,
-                "no data → default for each scale")
+        checkEq(s.rate, expectedRate, accuracy: 0.0001, "no data → default rate per scale")
         check(s.weightedResponses == 0, "no data → 0 responses per scale")
     }
 }
@@ -57,15 +58,13 @@ func testOneResponse() {
 }
 
 func testShortScaleReactsMoreToRecentData() {
-    // 5 responses in the last 30 min — 1h scale should produce shorter spacing
-    // because its effective window is smaller so the same responses represent higher density
-    let ages = (0..<5).map { TimeInterval($0 * 6 * 60) } // every 6 min
+    let ages = (0..<5).map { TimeInterval($0 * 6 * 60) }
     let r = AdaptiveRate.computeSpacing(responseAges: ages)
     let shortScale = r.scales.first { $0.halfLife == 1 * 3600 }!
     let longScale = r.scales.first { $0.halfLife == 24 * 3600 }!
-    check(shortScale.spacing < longScale.spacing,
-          "short scale produces shorter spacing for recent activity")
-    // Short scale's prior is smaller (shorter effective window)
+    // Short scale should have higher rate (more responsive)
+    check(shortScale.rate > longScale.rate,
+          "short scale has higher rate for recent activity")
     check(shortScale.priorCount < longScale.priorCount,
           "short scale has smaller prior")
 }
