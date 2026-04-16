@@ -2,7 +2,6 @@ import Foundation
 
 enum AdaptiveRate {
     static let targetRate = 0.8
-    static let halfLife: TimeInterval = 24 * 3600 // 24 hours
     static let defaultSpacing: TimeInterval = 3 * 3600 // 3 hours (~ 5/day)
     static let minSpacing: TimeInterval = 60 // 1 minute
     static let maxSpacing: TimeInterval = 12 * 3600 // 12 hours
@@ -10,45 +9,64 @@ enum AdaptiveRate {
     static let sleepHour = 22
     static let bufferSize = 3
 
-    struct RateResult {
+    struct Timescale {
+        let halfLife: TimeInterval
+        let weight: Double
+    }
+
+    static let timescales: [Timescale] = [
+        Timescale(halfLife: 1 * 3600, weight: 0.5),   // 1 hour — reactive
+        Timescale(halfLife: 24 * 3600, weight: 0.5),   // 24 hours — stable baseline
+    ]
+
+    struct ScaleResult {
+        let halfLife: TimeInterval
         let weightedResponses: Double
         let priorCount: Double
-        let responseInterval: TimeInterval
         let spacing: TimeInterval
     }
 
-    /// Compute notification spacing from response frequency using Bayesian blending.
+    struct RateResult {
+        let scales: [ScaleResult]
+        let spacing: TimeInterval
+    }
+
+    /// Compute notification spacing by blending multiple EWMA timescales.
     ///
-    /// Takes an array of response ages (seconds since each response).
-    /// Pure math — no iOS dependencies, testable via `swift test`.
-    ///
-    /// Uses a prior equivalent to the default rate (5/day). With no data, produces
-    /// exactly defaultSpacing. As real responses accumulate, they smoothly override
-    /// the prior. After ~3 days at the default rate, real data dominates.
-    ///
-    /// spacing = responseInterval / targetRate
-    /// responseInterval = effectiveWindow / (weightedResponses + priorCount)
+    /// Each timescale independently computes spacing via the Bayesian formula
+    /// (its own effective window and prior). Results are blended by weight.
+    /// With no data, every timescale produces exactly defaultSpacing.
     static func computeSpacing(responseAges ages: [TimeInterval]) -> RateResult {
         let ln2 = log(2.0)
-        var weightedResponses = 0.0
+        var blendedSpacing = 0.0
+        var scaleResults: [ScaleResult] = []
 
-        for age in ages {
-            weightedResponses += exp(-ln2 * age / halfLife)
+        for scale in timescales {
+            var weightedResponses = 0.0
+            for age in ages {
+                weightedResponses += exp(-ln2 * age / scale.halfLife)
+            }
+
+            let effectiveWindow = scale.halfLife / ln2
+            let priorCount = effectiveWindow / (defaultSpacing * targetRate)
+            let effectiveResponses = weightedResponses + priorCount
+            let responseInterval = effectiveWindow / effectiveResponses
+            let spacing = responseInterval / targetRate
+
+            scaleResults.append(ScaleResult(
+                halfLife: scale.halfLife,
+                weightedResponses: weightedResponses,
+                priorCount: priorCount,
+                spacing: spacing
+            ))
+
+            blendedSpacing += spacing * scale.weight
         }
 
-        let effectiveWindow = halfLife / ln2
-        // Prior: virtual responses at the default rate. Derived so that
-        // priorCount alone produces exactly defaultSpacing.
-        let priorCount = effectiveWindow / (defaultSpacing * targetRate)
-        let effectiveResponses = weightedResponses + priorCount
-        let responseInterval = effectiveWindow / effectiveResponses
-        let spacing = responseInterval / targetRate
-        let clampedSpacing = min(max(spacing, minSpacing), maxSpacing)
+        let clampedSpacing = min(max(blendedSpacing, minSpacing), maxSpacing)
 
         return RateResult(
-            weightedResponses: weightedResponses,
-            priorCount: priorCount,
-            responseInterval: responseInterval,
+            scales: scaleResults,
             spacing: clampedSpacing
         )
     }

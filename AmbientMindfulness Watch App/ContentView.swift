@@ -81,15 +81,28 @@ struct ContentView: View {
     }
 
     private var testButton: some View {
-        Button("Test Notification (5s)") {
-            let container = modelContext.container
-            Task {
-                await NotificationScheduler.scheduleTestNotification(modelContainer: container)
-                await refreshStatus()
+        VStack(spacing: 8) {
+            Button("Test Notification (5s)") {
+                let container = modelContext.container
+                Task {
+                    await NotificationScheduler.scheduleTestNotification(modelContainer: container)
+                    await refreshStatus()
+                }
             }
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+
+            Button("Clear Pending") {
+                let container = modelContext.container
+                Task {
+                    UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+                    await NotificationScheduler.topUp(modelContainer: container)
+                    await refreshStatus()
+                }
+            }
+            .buttonStyle(.bordered)
+            .tint(.red)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(.orange)
     }
 
     private func refreshStatus() async {
@@ -116,8 +129,13 @@ struct ContentView: View {
             let m = Int(t / 60)
             return m >= 60 ? "\(m / 60)h \(m % 60)m" : "\(m)m"
         }
-        let dataRatio = r.weightedResponses / (r.weightedResponses + r.priorCount) * 100
-        adaptiveInfo = "Spacing: \(fmt(r.spacing)) (interval \(fmt(r.responseInterval)) / \(AdaptiveRate.targetRate))\n\(String(format: "%.1f", r.weightedResponses)) responses + \(String(format: "%.0f", r.priorCount)) prior (\(String(format: "%.0f", dataRatio))% data)"
+        var lines = ["Spacing: \(fmt(r.spacing))"]
+        for s in r.scales {
+            let hlLabel = s.halfLife >= 3600 ? "\(Int(s.halfLife / 3600))h" : "\(Int(s.halfLife / 60))m"
+            let pct = s.weightedResponses / (s.weightedResponses + s.priorCount) * 100
+            lines.append("  \(hlLabel): \(fmt(s.spacing)) (\(String(format: "%.1f", s.weightedResponses))r, \(String(format: "%.0f", pct))% data)")
+        }
+        adaptiveInfo = lines.joined(separator: "\n")
     }
 
 }

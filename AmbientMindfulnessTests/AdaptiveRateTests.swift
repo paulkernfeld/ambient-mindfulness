@@ -13,14 +13,20 @@ final class AdaptiveRateTests: XCTestCase {
 
     func testNoDataProducesDefaultSpacing() {
         let result = AdaptiveRate.computeSpacing(responseAges: [])
-        XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing, accuracy: 1)
-        XCTAssertEqual(result.weightedResponses, 0)
-        XCTAssertGreaterThan(result.priorCount, 0)
+        XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing, accuracy: 0.001)
+        XCTAssertEqual(result.scales.count, AdaptiveRate.timescales.count)
+        for s in result.scales {
+            XCTAssertEqual(s.weightedResponses, 0)
+            XCTAssertEqual(s.spacing, AdaptiveRate.defaultSpacing, accuracy: 0.001)
+        }
     }
 
-    func testPriorDominatesWithFewResponses() {
-        let result = AdaptiveRate.computeSpacing(responseAges: ages([30]))
-        XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing, accuracy: 750)
+    func testShortScaleReactsMoreToRecentData() {
+        let result = AdaptiveRate.computeSpacing(responseAges: ages((0..<5).map { Double($0 * 6) }))
+        let shortScale = result.scales.first { $0.halfLife == 1 * 3600 }!
+        let longScale = result.scales.first { $0.halfLife == 24 * 3600 }!
+        XCTAssertLessThan(shortScale.spacing, longScale.spacing)
+        XCTAssertLessThan(shortScale.priorCount, longScale.priorCount)
     }
 
     func testDataGraduallyOverridesPrior() {
@@ -57,7 +63,6 @@ final class AdaptiveRateTests: XCTestCase {
     // MARK: - Clamping
 
     func testSpacingClampedToMin() {
-        // 10000 responses all at age 0 drives unclamped well below floor
         let result = AdaptiveRate.computeSpacing(responseAges: Array(repeating: 0.0, count: 10000))
         XCTAssertEqual(result.spacing, AdaptiveRate.minSpacing, accuracy: 0.001)
     }
