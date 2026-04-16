@@ -19,25 +19,21 @@ enum AdaptiveRate {
 
     /// Compute notification spacing from response frequency using Bayesian blending.
     ///
+    /// Takes an array of response ages (seconds since each response).
+    /// Pure math — no iOS dependencies, testable via `swift test`.
+    ///
     /// Uses a prior equivalent to the default rate (5/day). With no data, produces
     /// exactly defaultSpacing. As real responses accumulate, they smoothly override
     /// the prior. After ~3 days at the default rate, real data dominates.
     ///
     /// spacing = responseInterval / targetRate
     /// responseInterval = effectiveWindow / (weightedResponses + priorCount)
-    static func computeSpacing(entries: [MindfulEntry], now: Date = Date()) -> RateResult {
+    static func computeSpacing(responseAges ages: [TimeInterval]) -> RateResult {
         let ln2 = log(2.0)
         var weightedResponses = 0.0
 
-        for entry in entries {
-            guard let payload = entry.payload else { continue }
-            let age = now.timeIntervalSince(entry.timestamp)
-            if age < 0 { continue }
-            let weight = exp(-ln2 * age / halfLife)
-
-            if case .sentimentResponse = payload {
-                weightedResponses += weight
-            }
+        for age in ages {
+            weightedResponses += exp(-ln2 * age / halfLife)
         }
 
         let effectiveWindow = halfLife / ln2

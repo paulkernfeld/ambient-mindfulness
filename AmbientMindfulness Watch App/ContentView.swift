@@ -110,7 +110,8 @@ struct ContentView: View {
             .compactMap { ($0.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() }
             .min()
 
-        let r = AdaptiveRate.computeSpacing(entries: Array(entries))
+        let ages = AdaptiveRate.responseAges(from: Array(entries))
+        let r = AdaptiveRate.computeSpacing(responseAges: ages)
         func fmt(_ t: TimeInterval) -> String {
             let m = Int(t / 60)
             return m >= 60 ? "\(m / 60)h \(m % 60)m" : "\(m)m"

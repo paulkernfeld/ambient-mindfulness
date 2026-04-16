@@ -5,42 +5,27 @@ final class AdaptiveRateTests: XCTestCase {
 
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
 
-    private func makeEntry(_ payload: EntryPayload, minutesAgo: Double) -> MindfulEntry {
-        let data = try! JSONEncoder().encode(payload)
-        return MindfulEntry(
-            timestamp: now.addingTimeInterval(-minutesAgo * 60),
-            payloadJSON: data
-        )
+    private func ages(_ minutesAgoList: [Double]) -> [TimeInterval] {
+        minutesAgoList.map { $0 * 60 }
     }
 
     // MARK: - Prior behavior
 
     func testNoDataProducesDefaultSpacing() {
-        let result = AdaptiveRate.computeSpacing(entries: [], now: now)
+        let result = AdaptiveRate.computeSpacing(responseAges: [])
         XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing, accuracy: 1)
         XCTAssertEqual(result.weightedResponses, 0)
         XCTAssertGreaterThan(result.priorCount, 0)
     }
 
     func testPriorDominatesWithFewResponses() {
-        // 1 recent response barely shifts from default
-        let entries = [makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 30)]
-        let result = AdaptiveRate.computeSpacing(entries: entries, now: now)
-        // Should be close to default (prior dominates)
-        XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing, accuracy: 750) // within ~12 min
+        let result = AdaptiveRate.computeSpacing(responseAges: ages([30]))
+        XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing, accuracy: 750)
     }
 
     func testDataGraduallyOverridesPrior() {
-        // More responses → spacing moves further from default
-        let few = (0..<3).map { i in
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: Double(i * 60))
-        }
-        let many = (0..<30).map { i in
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: Double(i * 60))
-        }
-        let fewResult = AdaptiveRate.computeSpacing(entries: few, now: now)
-        let manyResult = AdaptiveRate.computeSpacing(entries: many, now: now)
-        // Both should differ from default, but many should differ more
+        let fewResult = AdaptiveRate.computeSpacing(responseAges: ages((0..<3).map { Double($0 * 60) }))
+        let manyResult = AdaptiveRate.computeSpacing(responseAges: ages((0..<30).map { Double($0 * 60) }))
         let fewDelta = abs(fewResult.spacing - AdaptiveRate.defaultSpacing)
         let manyDelta = abs(manyResult.spacing - AdaptiveRate.defaultSpacing)
         XCTAssertGreaterThan(manyDelta, fewDelta)
@@ -49,67 +34,54 @@ final class AdaptiveRateTests: XCTestCase {
     // MARK: - Convergence direction
 
     func testManyFrequentResponsesDecreasesSpacing() {
-        // 50 responses every 30 min → much more than default rate → spacing should decrease
-        let entries = (0..<50).map { i in
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: Double(i * 30))
-        }
-        let result = AdaptiveRate.computeSpacing(entries: entries, now: now)
+        let result = AdaptiveRate.computeSpacing(responseAges: ages((0..<50).map { Double($0 * 30) }))
         XCTAssertLessThan(result.spacing, AdaptiveRate.defaultSpacing)
     }
 
     func testManyResponsesProduceShorterSpacingThanFew() {
-        let many = (0..<50).map { i in
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: Double(i * 30))
-        }
-        let few = (0..<6).map { i in
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: Double(i * 480))
-        }
-        let manyResult = AdaptiveRate.computeSpacing(entries: many, now: now)
-        let fewResult = AdaptiveRate.computeSpacing(entries: few, now: now)
+        let manyResult = AdaptiveRate.computeSpacing(responseAges: ages((0..<50).map { Double($0 * 30) }))
+        let fewResult = AdaptiveRate.computeSpacing(responseAges: ages((0..<6).map { Double($0 * 480) }))
         XCTAssertLessThan(manyResult.spacing, fewResult.spacing)
     }
 
     // MARK: - Recency weighting
 
     func testRecentResponsesWeighMoreThanOld() {
-        // Recent cluster + old cluster: spacing should be shorter than old-only
-        let old = (0..<10).map { i in
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: 2880 + Double(i * 30))
-        }
-        let recent = (0..<10).map { i in
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: Double(i * 30))
-        }
-        let bothResult = AdaptiveRate.computeSpacing(entries: old + recent, now: now)
-        let oldResult = AdaptiveRate.computeSpacing(entries: old, now: now)
+        let oldAges = ages((0..<10).map { 2880.0 + Double($0 * 30) })
+        let recentAges = ages((0..<10).map { Double($0 * 30) })
+        let bothResult = AdaptiveRate.computeSpacing(responseAges: oldAges + recentAges)
+        let oldResult = AdaptiveRate.computeSpacing(responseAges: oldAges)
         XCTAssertLessThan(bothResult.spacing, oldResult.spacing)
     }
 
     // MARK: - Clamping
 
     func testSpacingClampedToMin() {
-        let entries = (0..<200).map { i in
-            makeEntry(.sentimentResponse(sentiment: .positive), minutesAgo: Double(i))
-        }
-        let result = AdaptiveRate.computeSpacing(entries: entries, now: now)
-        XCTAssertGreaterThanOrEqual(result.spacing, AdaptiveRate.minSpacing)
+        // 10000 responses all at age 0 drives unclamped well below floor
+        let result = AdaptiveRate.computeSpacing(responseAges: Array(repeating: 0.0, count: 10000))
+        XCTAssertEqual(result.spacing, AdaptiveRate.minSpacing, accuracy: 0.001)
     }
 
     func testSpacingClampedToMax() {
-        let result = AdaptiveRate.computeSpacing(entries: [], now: now)
+        let result = AdaptiveRate.computeSpacing(responseAges: [])
         XCTAssertLessThanOrEqual(result.spacing, AdaptiveRate.maxSpacing)
     }
 
-    // MARK: - Ignored entries
+    // MARK: - Ignored entries (via responseAges extraction)
 
-    func testNonResponseEntriesIgnored() {
-        let entries = [
-            makeEntry(.sentimentDelivered, minutesAgo: 10),
-            makeEntry(.permissionGranted, minutesAgo: 20),
-            makeEntry(.notificationsScheduled(count: 3, nextTime: nil), minutesAgo: 30),
-        ]
-        let result = AdaptiveRate.computeSpacing(entries: entries, now: now)
-        XCTAssertEqual(result.weightedResponses, 0)
-        XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing, accuracy: 1)
+    func testResponseAgesExtraction() {
+        let data = try! JSONEncoder().encode(EntryPayload.sentimentResponse(sentiment: .positive))
+        let response = MindfulEntry(timestamp: now.addingTimeInterval(-1800), payloadJSON: data)
+
+        let deliveredData = try! JSONEncoder().encode(EntryPayload.sentimentDelivered)
+        let delivered = MindfulEntry(timestamp: now.addingTimeInterval(-600), payloadJSON: deliveredData)
+
+        let permData = try! JSONEncoder().encode(EntryPayload.permissionGranted)
+        let perm = MindfulEntry(timestamp: now.addingTimeInterval(-1200), payloadJSON: permData)
+
+        let extracted = AdaptiveRate.responseAges(from: [response, delivered, perm], now: now)
+        XCTAssertEqual(extracted.count, 1)
+        XCTAssertEqual(extracted[0], 1800, accuracy: 1)
     }
 
     // MARK: - nextTime

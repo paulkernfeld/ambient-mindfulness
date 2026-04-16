@@ -59,7 +59,8 @@ enum NotificationScheduler {
         var descriptor = FetchDescriptor<MindfulEntry>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
         descriptor.fetchLimit = 200
         let entries = (try? context.fetch(descriptor)) ?? []
-        let result = AdaptiveRate.computeSpacing(entries: entries)
+        let ages = AdaptiveRate.responseAges(from: entries)
+        let result = AdaptiveRate.computeSpacing(responseAges: ages)
 
         // Find the latest scheduled time (or now)
         let latestPending = sentimentPending
