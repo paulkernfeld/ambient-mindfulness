@@ -74,3 +74,11 @@ Follows Paul's "light functional" style from the root skroding CLAUDE.md:
 - Watch-to-phone sync (`WatchSync.sendAllEntries`) only fires on notification events, not on a schedule
 - No randomness/jitter in notification timing yet
 - `@unchecked Sendable` on `NotificationDelegate` is a known sharp edge
+
+## Future Directions
+
+- **More question variety.** Concrete grounding questions ("warm or cold right now?", "what's in your visual field?") Difficulty axis = subtlety: easy sensory checks → subtler interoceptive ones.
+- **Voice input.** It could be cool to let the user record a tiny free-form snippet.
+- **Show graphs.** E.g. responses per day, sentiment over time.
+- **Worst-case-user design principle.** This kind of tool is most needed when the user is scattered/avoidant/low-mindfulness. Design for that state, not the meditator-in-flow.
+- **No-guilt phrasing.** Questions must not imply the user *should* be doing something else.
