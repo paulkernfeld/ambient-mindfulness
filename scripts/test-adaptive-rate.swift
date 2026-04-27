@@ -16,97 +16,68 @@ func checkEq(_ a: Double, _ b: Double, accuracy: Double, _ msg: String, line: In
     else { failed += 1; print("FAIL (\(line)): \(msg): \(a) != \(b) +/- \(accuracy)") }
 }
 
-// Compute expected spacing from first principles — blend rates, convert once.
-let ln2 = log(2.0)
-
-func expectedSpacingUnclamped(_ ages: [TimeInterval]) -> Double {
-    var blendedRate = 0.0
-    for scale in AdaptiveRate.timescales {
-        var w = 0.0
-        for age in ages { w += exp(-ln2 * age / scale.halfLife) }
-        let ew = scale.halfLife / ln2
-        let prior = ew / (AdaptiveRate.defaultSpacing * AdaptiveRate.targetRate)
-        let rate = AdaptiveRate.targetRate * (w + prior) / ew
-        blendedRate += rate * scale.weight
-    }
-    return 1.0 / blendedRate
-}
-
+// Expected spacing from first principles:
+// rate = 0.5 * hourRate + 0.5 * dayRate, each with its own prior
 func expectedSpacing(_ ages: [TimeInterval]) -> Double {
-    return min(max(expectedSpacingUnclamped(ages),
-                   AdaptiveRate.minSpacing), AdaptiveRate.maxSpacing)
+    let daysCount = Double(ages.filter { $0 < AdaptiveRate.dayWindow }.count)
+    let hoursCount = Double(ages.filter { $0 < AdaptiveRate.hourWindow }.count)
+    let hourRate = (hoursCount + AdaptiveRate.pseudoCount) / (AdaptiveRate.hourWindow + AdaptiveRate.pseudoDuration)
+    let dayRate = (daysCount + AdaptiveRate.pseudoCount) / (AdaptiveRate.dayWindow + AdaptiveRate.pseudoDuration)
+    let rate = 0.5 * hourRate + 0.5 * dayRate
+    return min(max(1.0 / rate, AdaptiveRate.minSpacing), AdaptiveRate.maxSpacing)
 }
 
 // ── Tests ──
 
 func testNoData() {
     let r = AdaptiveRate.computeSpacing(responseAges: [])
-    checkEq(r.spacing, AdaptiveRate.defaultSpacing, accuracy: 0.001, "no data → default spacing")
-    check(r.scales.count == 2, "two timescales")
-    // Each scale's rate should equal 1/defaultSpacing
-    let expectedRate = 1.0 / AdaptiveRate.defaultSpacing
-    for s in r.scales {
-        checkEq(s.rate, expectedRate, accuracy: 0.0001, "no data → default rate per scale")
-        check(s.weightedResponses == 0, "no data → 0 responses per scale")
-    }
+    checkEq(r.spacing, expectedSpacing([]), accuracy: 0.001, "no data → prior-only spacing")
+    check(r.daysCount == 0, "no data → 0 days count")
+    check(r.hoursCount == 0, "no data → 0 hours count")
 }
 
 func testOneResponse() {
     let ages: [TimeInterval] = [30.0 * 60]
     let r = AdaptiveRate.computeSpacing(responseAges: ages)
     checkEq(r.spacing, expectedSpacing(ages), accuracy: 0.001, "1 response → exact expected")
+    check(r.daysCount == 1, "1 response in day window")
+    check(r.hoursCount == 1, "1 response also in hour window")
 }
 
-func testShortScaleReactsMoreToRecentData() {
-    let ages = (0..<5).map { TimeInterval($0 * 6 * 60) }
-    let r = AdaptiveRate.computeSpacing(responseAges: ages)
-    let shortScale = r.scales.first { $0.halfLife == 1 * 3600 }!
-    let longScale = r.scales.first { $0.halfLife == 24 * 3600 }!
-    // Short scale should have higher rate (more responsive)
-    check(shortScale.rate > longScale.rate,
-          "short scale has higher rate for recent activity")
-    check(shortScale.priorCount < longScale.priorCount,
-          "short scale has smaller prior")
+func testResponsesDecreaseSpacing() {
+    let noData = AdaptiveRate.computeSpacing(responseAges: [])
+    let ages = (0..<10).map { TimeInterval($0 * 30 * 60) }
+    let withData = AdaptiveRate.computeSpacing(responseAges: ages)
+    check(withData.spacing < noData.spacing, "responses decrease spacing")
 }
 
-func testDataOverridesPrior() {
+func testMoreResponsesShorterSpacing() {
     let fewAges = (0..<3).map { TimeInterval($0 * 3600) }
     let manyAges = (0..<30).map { TimeInterval($0 * 3600) }
     let fewR = AdaptiveRate.computeSpacing(responseAges: fewAges)
     let manyR = AdaptiveRate.computeSpacing(responseAges: manyAges)
-    check(abs(manyR.spacing - AdaptiveRate.defaultSpacing) >
-          abs(fewR.spacing - AdaptiveRate.defaultSpacing),
-          "more data → further from default")
+    check(manyR.spacing < fewR.spacing, "more responses → shorter spacing")
 }
 
-func testFrequentResponsesDecreaseSpacing() {
-    let ages = (0..<50).map { TimeInterval($0 * 30 * 60) }
-    let r = AdaptiveRate.computeSpacing(responseAges: ages)
-    check(r.spacing < AdaptiveRate.defaultSpacing, "frequent responses → shorter spacing")
-    checkEq(r.spacing, expectedSpacing(ages), accuracy: 0.001, "frequent → exact")
+func testHourWindowReactivity() {
+    let dayOnly: [TimeInterval] = [7200, 14400, 21600]
+    let dayPlusHour: [TimeInterval] = [300, 600, 900, 7200, 14400, 21600]
+    let dayR = AdaptiveRate.computeSpacing(responseAges: dayOnly)
+    let hourR = AdaptiveRate.computeSpacing(responseAges: dayPlusHour)
+    check(hourR.spacing < dayR.spacing, "hour window responses decrease spacing further")
 }
 
-func testManyVsFew() {
-    let manyAges = (0..<50).map { TimeInterval($0 * 30 * 60) }
-    let fewAges = (0..<6).map { TimeInterval($0 * 480 * 60) }
-    let manyR = AdaptiveRate.computeSpacing(responseAges: manyAges)
-    let fewR = AdaptiveRate.computeSpacing(responseAges: fewAges)
-    check(manyR.spacing < fewR.spacing, "many < few spacing")
-}
-
-func testRecencyWeighting() {
-    let oldAges = (0..<10).map { TimeInterval((2880 + $0 * 30) * 60) }
-    let recentAges = (0..<10).map { TimeInterval($0 * 30 * 60) }
-    let bothR = AdaptiveRate.computeSpacing(responseAges: oldAges + recentAges)
-    let oldR = AdaptiveRate.computeSpacing(responseAges: oldAges)
-    check(bothR.spacing < oldR.spacing, "recent responses weigh more")
+func testBeyondDayWindowIgnored() {
+    let inWindow: [TimeInterval] = [6000]
+    let beyondWindow: [TimeInterval] = [6000, AdaptiveRate.dayWindow + 3600]
+    let inR = AdaptiveRate.computeSpacing(responseAges: inWindow)
+    let outR = AdaptiveRate.computeSpacing(responseAges: beyondWindow)
+    checkEq(inR.spacing, outR.spacing, accuracy: 0.001, "beyond-window response ignored")
 }
 
 func testClampMin() {
     let ages = Array(repeating: 0.0 as TimeInterval, count: 10000)
     let r = AdaptiveRate.computeSpacing(responseAges: ages)
-    let unclamped = expectedSpacingUnclamped(ages)
-    check(unclamped < AdaptiveRate.minSpacing, "unclamped value below min: \(unclamped)")
     checkEq(r.spacing, AdaptiveRate.minSpacing, accuracy: 0.001, "clamped to min")
 }
 
@@ -115,17 +86,23 @@ func testClampMax() {
     check(r.spacing <= AdaptiveRate.maxSpacing, "at or below max")
 }
 
+func testExactFormula() {
+    let ages: [TimeInterval] = [60, 300, 1800, 7200, 36000]
+    let r = AdaptiveRate.computeSpacing(responseAges: ages)
+    checkEq(r.spacing, expectedSpacing(ages), accuracy: 0.001, "matches first-principles formula")
+}
+
 // ── Run ──
 
 testNoData()
 testOneResponse()
-testShortScaleReactsMoreToRecentData()
-testDataOverridesPrior()
-testFrequentResponsesDecreaseSpacing()
-testManyVsFew()
-testRecencyWeighting()
+testResponsesDecreaseSpacing()
+testMoreResponsesShorterSpacing()
+testHourWindowReactivity()
+testBeyondDayWindowIgnored()
 testClampMin()
 testClampMax()
+testExactFormula()
 
 print("\(passed) passed, \(failed) failed")
 if failed > 0 { exit(1) }

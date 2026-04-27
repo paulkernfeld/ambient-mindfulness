@@ -3,62 +3,63 @@ import XCTest
 
 final class AdaptiveRateTests: XCTestCase {
 
-    private let now = Date(timeIntervalSince1970: 1_700_000_000)
+    // 14:00 local on a fixed day — safely within waking hours in any timezone
+    private let now = Calendar.current.date(bySettingHour: 14, minute: 0, second: 0,
+        of: Date(timeIntervalSince1970: 1_700_000_000))!
 
     private func ages(_ minutesAgoList: [Double]) -> [TimeInterval] {
         minutesAgoList.map { $0 * 60 }
     }
 
-    // MARK: - Prior behavior
+    private func localTime(hour: Int, minute: Int = 0, dayOffset: Int = 0) -> Date {
+        let day = Calendar.current.date(byAdding: .day, value: dayOffset, to: now)!
+        return Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: day)!
+    }
 
-    func testNoDataProducesDefaultSpacing() {
+    // MARK: - Cold start
+
+    func testNoDataProducesPriorOnlySpacing() {
         let result = AdaptiveRate.computeSpacing(responseAges: [])
-        XCTAssertEqual(result.spacing, AdaptiveRate.defaultSpacing, accuracy: 0.001)
-        XCTAssertEqual(result.scales.count, AdaptiveRate.timescales.count)
-        let expectedRate = 1.0 / AdaptiveRate.defaultSpacing
-        for s in result.scales {
-            XCTAssertEqual(s.weightedResponses, 0)
-            XCTAssertEqual(s.rate, expectedRate, accuracy: 0.0001)
-        }
-    }
-
-    func testShortScaleReactsMoreToRecentData() {
-        let result = AdaptiveRate.computeSpacing(responseAges: ages((0..<5).map { Double($0 * 6) }))
-        let shortScale = result.scales.first { $0.halfLife == 1 * 3600 }!
-        let longScale = result.scales.first { $0.halfLife == 24 * 3600 }!
-        XCTAssertGreaterThan(shortScale.rate, longScale.rate)
-        XCTAssertLessThan(shortScale.priorCount, longScale.priorCount)
-    }
-
-    func testDataGraduallyOverridesPrior() {
-        let fewResult = AdaptiveRate.computeSpacing(responseAges: ages((0..<3).map { Double($0 * 60) }))
-        let manyResult = AdaptiveRate.computeSpacing(responseAges: ages((0..<30).map { Double($0 * 60) }))
-        let fewDelta = abs(fewResult.spacing - AdaptiveRate.defaultSpacing)
-        let manyDelta = abs(manyResult.spacing - AdaptiveRate.defaultSpacing)
-        XCTAssertGreaterThan(manyDelta, fewDelta)
+        let expectedRate = 0.5 * (AdaptiveRate.pseudoCount / (AdaptiveRate.hourWindow + AdaptiveRate.pseudoDuration))
+                         + 0.5 * (AdaptiveRate.pseudoCount / (AdaptiveRate.dayWindow + AdaptiveRate.pseudoDuration))
+        XCTAssertEqual(result.spacing, 1.0 / expectedRate, accuracy: 0.001)
+        XCTAssertEqual(result.daysCount, 0)
+        XCTAssertEqual(result.hoursCount, 0)
     }
 
     // MARK: - Convergence direction
 
-    func testManyFrequentResponsesDecreasesSpacing() {
-        let result = AdaptiveRate.computeSpacing(responseAges: ages((0..<50).map { Double($0 * 30) }))
-        XCTAssertLessThan(result.spacing, AdaptiveRate.defaultSpacing)
+    func testResponsesDecreaseSpacing() {
+        let noData = AdaptiveRate.computeSpacing(responseAges: [])
+        let withData = AdaptiveRate.computeSpacing(responseAges: ages((0..<10).map { Double($0 * 30) }))
+        XCTAssertLessThan(withData.spacing, noData.spacing)
     }
 
-    func testManyResponsesProduceShorterSpacingThanFew() {
-        let manyResult = AdaptiveRate.computeSpacing(responseAges: ages((0..<50).map { Double($0 * 30) }))
-        let fewResult = AdaptiveRate.computeSpacing(responseAges: ages((0..<6).map { Double($0 * 480) }))
+    func testMoreResponsesProduceShorterSpacing() {
+        let fewResult = AdaptiveRate.computeSpacing(responseAges: ages((0..<3).map { Double($0 * 60) }))
+        let manyResult = AdaptiveRate.computeSpacing(responseAges: ages((0..<30).map { Double($0 * 60) }))
         XCTAssertLessThan(manyResult.spacing, fewResult.spacing)
     }
 
-    // MARK: - Recency weighting
+    // MARK: - Hour window reactivity
 
-    func testRecentResponsesWeighMoreThanOld() {
-        let oldAges = ages((0..<10).map { 2880.0 + Double($0 * 30) })
-        let recentAges = ages((0..<10).map { Double($0 * 30) })
-        let bothResult = AdaptiveRate.computeSpacing(responseAges: oldAges + recentAges)
-        let oldResult = AdaptiveRate.computeSpacing(responseAges: oldAges)
-        XCTAssertLessThan(bothResult.spacing, oldResult.spacing)
+    func testRecentResponsesInHourWindowDecreaseSpacing() {
+        let dayOnly = ages([120, 240, 360, 480, 600])
+        let dayPlusHour = dayOnly + ages([5, 10, 15])
+        let dayResult = AdaptiveRate.computeSpacing(responseAges: dayOnly)
+        let hourResult = AdaptiveRate.computeSpacing(responseAges: dayPlusHour)
+        XCTAssertLessThan(hourResult.spacing, dayResult.spacing)
+    }
+
+    // MARK: - Window boundaries
+
+    func testResponsesBeyondDayWindowIgnored() {
+        let awakeHoursPerDay = Double(AdaptiveRate.sleepHour - AdaptiveRate.wakeHour)
+        let inWindow = ages([100])
+        let beyondWindow = ages([100, awakeHoursPerDay * 60 * 6])
+        let inResult = AdaptiveRate.computeSpacing(responseAges: inWindow)
+        let outResult = AdaptiveRate.computeSpacing(responseAges: beyondWindow)
+        XCTAssertEqual(inResult.spacing, outResult.spacing, accuracy: 0.001)
     }
 
     // MARK: - Clamping
@@ -88,6 +89,30 @@ final class AdaptiveRateTests: XCTestCase {
         let extracted = AdaptiveRate.responseAges(from: [response, delivered, perm], now: now)
         XCTAssertEqual(extracted.count, 1)
         XCTAssertEqual(extracted[0], 1800, accuracy: 1)
+    }
+
+    // MARK: - Awake-time ages
+
+    func testAwakeAgeSameDay() {
+        // 10:00 → 14:00 same day = 4h awake
+        let age = AdaptiveRate.awakeAge(from: localTime(hour: 10), to: localTime(hour: 14))
+        XCTAssertEqual(age, 4 * 3600, accuracy: 1)
+    }
+
+    func testAwakeAgeAcrossOneNight() {
+        // Yesterday 21:30 → today 07:30 = 0.5h + 0.5h = 1h awake
+        let age = AdaptiveRate.awakeAge(
+            from: localTime(hour: 21, minute: 30, dayOffset: -1),
+            to: localTime(hour: 7, minute: 30))
+        XCTAssertEqual(age, 3600, accuracy: 1)
+    }
+
+    func testAwakeAgeMultipleDays() {
+        // 3 days ago 21:00 → today 08:00 = 1h + 15h + 15h + 1h = 32h
+        let age = AdaptiveRate.awakeAge(
+            from: localTime(hour: 21, dayOffset: -3),
+            to: localTime(hour: 8))
+        XCTAssertEqual(age, 32 * 3600, accuracy: 1)
     }
 
     // MARK: - nextTime

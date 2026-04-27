@@ -1,74 +1,56 @@
 import Foundation
 
 enum AdaptiveRate {
-    static let targetRate = 0.8
-    static let defaultSpacing: TimeInterval = 3 * 3600 // 3 hours (~ 5/day)
     static let minSpacing: TimeInterval = 60 // 1 minute
     static let maxSpacing: TimeInterval = 12 * 3600 // 12 hours
     static let wakeHour = 7
     static let sleepHour = 22
     static let bufferSize = 3
 
-    struct Timescale {
-        let halfLife: TimeInterval
-        let weight: Double
-    }
-
-    static let timescales: [Timescale] = [
-        Timescale(halfLife: 1 * 3600, weight: 0.5),   // 1 hour — reactive
-        Timescale(halfLife: 24 * 3600, weight: 0.5),   // 24 hours — stable baseline
-    ]
-
-    struct ScaleResult {
-        let halfLife: TimeInterval
-        let weightedResponses: Double
-        let priorCount: Double
-        let rate: Double // notifications per second for this scale
-    }
+    static let awakePerDay = TimeInterval((sleepHour - wakeHour) * 3600) // 15h
+    static let hourWindow: TimeInterval = 3600 // 1 awake hour
+    static let dayWindow: TimeInterval = 5 * awakePerDay // 5 awake days (75h)
+    static let pseudoCount = 1.0
+    static let pseudoDuration: TimeInterval = 3 * 3600 // 3h
 
     struct RateResult {
-        let scales: [ScaleResult]
-        let blendedRate: Double // weighted sum of per-scale rates
+        let daysCount: Int
+        let hoursCount: Int
+        let rate: Double // pooled response rate (responses per awake-second)
         let spacing: TimeInterval
     }
 
-    /// Compute notification spacing by blending rates from multiple EWMA timescales.
-    ///
-    /// Each timescale computes a rate (notifications/sec) from its own effective
-    /// window and Bayesian prior. Rates are blended by weight, then converted to
-    /// spacing once at the end. With no data, every scale produces 1/defaultSpacing.
+    /// Blended rate from two rectangular windows (1h reactive, 5d stable), each with its own prior.
+    /// Ages are in awake-seconds (sleep hours excluded).
     static func computeSpacing(responseAges ages: [TimeInterval]) -> RateResult {
-        let ln2 = log(2.0)
-        var blendedRate = 0.0
-        var scaleResults: [ScaleResult] = []
+        let daysCount = ages.filter { $0 < dayWindow }.count
+        let hoursCount = ages.filter { $0 < hourWindow }.count
+        let hourRate = (Double(hoursCount) + pseudoCount) / (hourWindow + pseudoDuration)
+        let dayRate = (Double(daysCount) + pseudoCount) / (dayWindow + pseudoDuration)
+        let rate = 0.5 * hourRate + 0.5 * dayRate
+        let spacing = min(max(1.0 / rate, minSpacing), maxSpacing)
+        return RateResult(daysCount: daysCount, hoursCount: hoursCount, rate: rate, spacing: spacing)
+    }
 
-        for scale in timescales {
-            var weightedResponses = 0.0
-            for age in ages {
-                weightedResponses += exp(-ln2 * age / scale.halfLife)
-            }
+    /// Awake seconds elapsed at a given time-of-day (seconds from midnight).
+    /// Clamps to [wakeHour, sleepHour] so sleep-time inputs map to boundaries.
+    private static func awakeSeconds(at secondsFromMidnight: TimeInterval) -> TimeInterval {
+        let wake = TimeInterval(wakeHour * 3600)
+        let sleep = TimeInterval(sleepHour * 3600)
+        return min(max(secondsFromMidnight, wake), sleep) - wake
+    }
 
-            let effectiveWindow = scale.halfLife / ln2
-            let priorCount = effectiveWindow / (defaultSpacing * targetRate)
-            let rate = targetRate * (weightedResponses + priorCount) / effectiveWindow
-
-            scaleResults.append(ScaleResult(
-                halfLife: scale.halfLife,
-                weightedResponses: weightedResponses,
-                priorCount: priorCount,
-                rate: rate
-            ))
-
-            blendedRate += rate * scale.weight
-        }
-
-        let spacing = min(max(1.0 / blendedRate, minSpacing), maxSpacing)
-
-        return RateResult(
-            scales: scaleResults,
-            blendedRate: blendedRate,
-            spacing: spacing
-        )
+    /// Elapsed awake time between two dates, excluding sleep hours.
+    /// Each day contributes at most (sleepHour − wakeHour) hours.
+    static func awakeAge(from start: Date, to end: Date) -> TimeInterval {
+        let cal = Calendar.current
+        let startDay = cal.startOfDay(for: start)
+        let endDay = cal.startOfDay(for: end)
+        let days = cal.dateComponents([.day], from: startDay, to: endDay).day ?? 0
+        let awakePerDay = TimeInterval((sleepHour - wakeHour) * 3600)
+        return Double(days) * awakePerDay
+            + awakeSeconds(at: end.timeIntervalSince(endDay))
+            - awakeSeconds(at: start.timeIntervalSince(startDay))
     }
 
     /// Compute the next notification time after `after`, skipping sleep hours.
