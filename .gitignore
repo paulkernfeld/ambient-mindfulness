@@ -23,3 +23,6 @@ XcodeGen/
 apple-issuer-id.txt
 apple-team-id.txt
 .ci-logs/
+
+# Claude Code local config
+.claude/
