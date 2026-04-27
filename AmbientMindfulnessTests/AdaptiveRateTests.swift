@@ -77,18 +77,28 @@ final class AdaptiveRateTests: XCTestCase {
     // MARK: - Ignored entries (via responseAges extraction)
 
     func testResponseAgesExtraction() {
-        let data = try! JSONEncoder().encode(EntryPayload.sentimentResponse(sentiment: .positive))
-        let response = MindfulEntry(timestamp: now.addingTimeInterval(-1800), payloadJSON: data)
+        let sentimentData = try! JSONEncoder().encode(EntryPayload.sentimentResponse(sentiment: .positive))
+        let sentimentResponse = MindfulEntry(timestamp: now.addingTimeInterval(-1800), payloadJSON: sentimentData)
+
+        let arousalData = try! JSONEncoder().encode(EntryPayload.arousalResponse(arousal: .subtleRestless))
+        let arousalResponse = MindfulEntry(timestamp: now.addingTimeInterval(-900), payloadJSON: arousalData)
 
         let deliveredData = try! JSONEncoder().encode(EntryPayload.sentimentDelivered)
         let delivered = MindfulEntry(timestamp: now.addingTimeInterval(-600), payloadJSON: deliveredData)
 
+        let arousalDeliveredData = try! JSONEncoder().encode(EntryPayload.arousalDelivered)
+        let arousalDelivered = MindfulEntry(timestamp: now.addingTimeInterval(-700), payloadJSON: arousalDeliveredData)
+
         let permData = try! JSONEncoder().encode(EntryPayload.permissionGranted)
         let perm = MindfulEntry(timestamp: now.addingTimeInterval(-1200), payloadJSON: permData)
 
-        let extracted = AdaptiveRate.responseAges(from: [response, delivered, perm], now: now)
-        XCTAssertEqual(extracted.count, 1)
-        XCTAssertEqual(extracted[0], 1800, accuracy: 1)
+        let extracted = AdaptiveRate.responseAges(
+            from: [sentimentResponse, arousalResponse, delivered, arousalDelivered, perm],
+            now: now)
+        XCTAssertEqual(extracted.count, 2, "Both sentiment and arousal responses should count")
+        let sorted = extracted.sorted()
+        XCTAssertEqual(sorted[0], 900, accuracy: 1)
+        XCTAssertEqual(sorted[1], 1800, accuracy: 1)
     }
 
     // MARK: - Awake-time ages

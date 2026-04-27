@@ -14,8 +14,11 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @u
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        // Log delivery for debugging (not used in rate computation)
-        await logAndSync(.sentimentDelivered)
+        let category = notification.request.content.categoryIdentifier
+        let payload: EntryPayload = category == CheckinAxis.arousal.categoryIdentifier
+            ? .arousalDelivered
+            : .sentimentDelivered
+        await logAndSync(payload)
         return [.banner, .list, .sound]
     }
 
@@ -25,9 +28,17 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate, @u
     ) async {
         guard response.actionIdentifier != UNNotificationDismissActionIdentifier else { return }
 
+        let category = response.notification.request.content.categoryIdentifier
+        let isArousal = category == CheckinAxis.arousal.categoryIdentifier
+
         if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
-            // User tapped notification body (no emoji button) — still engagement
-            await logSyncAndTopUp(.sentimentResponse(sentiment: .other))
+            // Tapped notification body (no emoji button) — log as "other" on the right axis
+            let payload: EntryPayload = isArousal
+                ? .arousalResponse(arousal: .other)
+                : .sentimentResponse(sentiment: .other)
+            await logSyncAndTopUp(payload)
+        } else if isArousal, let arousal = Arousal(rawValue: response.actionIdentifier) {
+            await logSyncAndTopUp(.arousalResponse(arousal: arousal))
         } else if let sentiment = Sentiment(rawValue: response.actionIdentifier) {
             await logSyncAndTopUp(.sentimentResponse(sentiment: sentiment))
         }

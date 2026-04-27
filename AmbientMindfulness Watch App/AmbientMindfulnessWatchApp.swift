@@ -24,7 +24,7 @@ struct AmbientMindfulnessWatchApp: App {
         self.notificationDelegate = notificationDelegate
 
         UNUserNotificationCenter.current().delegate = notificationDelegate
-        NotificationScheduler.registerCategory()
+        NotificationScheduler.registerCategories()
         Task {
             await NotificationScheduler.topUp(modelContainer: container)
         }

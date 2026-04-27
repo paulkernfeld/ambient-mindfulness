@@ -66,7 +66,8 @@ Follows Paul's "light functional" style from the root skroding CLAUDE.md:
 - Immutability by default, no classes for app logic (enums with static functions)
 - Swift 6 strict concurrency: `@MainActor` for SwiftData, `@unchecked Sendable` where needed, `nonisolated` for delegate callbacks
 - `EntryPayload` enum as the log format — all events are payload cases
-- Display logic (`emoji`, `label`, `isSentiment`) lives on `EntryPayload`, not in views
+- Display logic (`emoji`, `label`, `isResponse`) lives on `EntryPayload`, not in views
+- Two check-in axes: `Sentiment` (valence) and `Arousal` (Buddhist dullness↔restlessness). Each notification picks one axis randomly. `CheckinAxis` enum in `NotificationScheduler.swift` owns the per-axis title/category/actions.
 
 ## Known Issues / Future Work
 

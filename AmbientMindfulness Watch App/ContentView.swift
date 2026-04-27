@@ -24,7 +24,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var latestEntryView: some View {
-        if let latest = entries.first(where: { $0.payload?.isSentiment == true }),
+        if let latest = entries.first(where: { $0.payload?.isResponse == true }),
            let payload = latest.payload {
             VStack(spacing: 4) {
                 Text(payload.emoji)

@@ -2,26 +2,49 @@ import Foundation
 import UserNotifications
 import SwiftData
 
-enum NotificationScheduler {
-    static let categoryIdentifier = "SENTIMENT_CHECK"
+enum CheckinAxis: String, CaseIterable {
+    case sentiment
+    case arousal
 
-    static func registerCategory() {
-        let actions = Sentiment.allCases.map { sentiment in
-            UNNotificationAction(
-                identifier: sentiment.rawValue,
-                title: sentiment.emoji,
+    var categoryIdentifier: String {
+        switch self {
+        case .sentiment: "SENTIMENT_CHECK"
+        case .arousal:   "AROUSAL_CHECK"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .sentiment: "Valence?"
+        case .arousal:   "Activation?"
+        }
+    }
+
+    var actions: [UNNotificationAction] {
+        switch self {
+        case .sentiment:
+            return Sentiment.allCases.map {
+                UNNotificationAction(identifier: $0.rawValue, title: $0.emoji, options: [])
+            }
+        case .arousal:
+            return Arousal.allCases.map {
+                UNNotificationAction(identifier: $0.rawValue, title: $0.emoji, options: [])
+            }
+        }
+    }
+}
+
+enum NotificationScheduler {
+    static func registerCategories() {
+        let categories = CheckinAxis.allCases.map { axis in
+            UNNotificationCategory(
+                identifier: axis.categoryIdentifier,
+                actions: axis.actions,
+                intentIdentifiers: [],
                 options: []
             )
         }
-
-        let category = UNNotificationCategory(
-            identifier: categoryIdentifier,
-            actions: actions,
-            intentIdentifiers: [],
-            options: []
-        )
-
-        UNUserNotificationCenter.current().setNotificationCategories([category])
+        UNUserNotificationCenter.current().setNotificationCategories(Set(categories))
     }
 
     /// Top up pending notifications to the buffer size.
@@ -49,10 +72,10 @@ enum NotificationScheduler {
             }
         }
 
-        // Check how many are already pending
+        // Check how many are already pending (count any non-test scheduled checkin)
         let pending = await center.pendingNotificationRequests()
-        let sentimentPending = pending.filter { $0.identifier.hasPrefix("sentiment-") }
-        let needed = AdaptiveRate.bufferSize - sentimentPending.count
+        let checkinPending = pending.filter { !$0.identifier.hasPrefix("test-") }
+        let needed = AdaptiveRate.bufferSize - checkinPending.count
         guard needed > 0 else { return }
 
         // Compute adaptive spacing from entry log
@@ -63,20 +86,21 @@ enum NotificationScheduler {
         let result = AdaptiveRate.computeSpacing(responseAges: ages)
 
         // Find the latest scheduled time (or now)
-        let latestPending = sentimentPending
+        let latestPending = checkinPending
             .compactMap { ($0.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate() }
             .max()
         var last = max(latestPending ?? Date(), Date())
 
-        // Schedule up to the buffer size
+        // Schedule up to the buffer size, picking a random axis per slot
         var scheduledCount = 0
         for i in 0..<needed {
             let time = AdaptiveRate.nextTime(after: last, spacing: result.spacing)
+            let axis = CheckinAxis.allCases.randomElement()!
 
             let content = UNMutableNotificationContent()
-            content.title = "How are you?"
+            content.title = axis.title
             content.body = "Tap to check in"
-            content.categoryIdentifier = categoryIdentifier
+            content.categoryIdentifier = axis.categoryIdentifier
             content.sound = .default
 
             let components = Calendar.current.dateComponents(
@@ -89,7 +113,7 @@ enum NotificationScheduler {
             )
 
             let request = UNNotificationRequest(
-                identifier: "sentiment-\(Int(time.timeIntervalSince1970))-\(i)",
+                identifier: "checkin-\(Int(time.timeIntervalSince1970))-\(i)",
                 content: content,
                 trigger: trigger
             )
@@ -112,11 +136,12 @@ enum NotificationScheduler {
     static func scheduleTestNotification(modelContainer: ModelContainer) async {
         let context = ModelContext(modelContainer)
         let center = UNUserNotificationCenter.current()
+        let axis = CheckinAxis.allCases.randomElement()!
 
         let content = UNMutableNotificationContent()
-        content.title = "Test notification"
+        content.title = "Test: \(axis.title)"
         content.body = "Tap to check in"
-        content.categoryIdentifier = categoryIdentifier
+        content.categoryIdentifier = axis.categoryIdentifier
         content.sound = .default
 
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)

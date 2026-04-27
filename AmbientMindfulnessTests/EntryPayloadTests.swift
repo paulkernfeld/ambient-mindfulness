@@ -9,9 +9,25 @@ final class EntryPayloadTests: XCTestCase {
         XCTAssertEqual(decoded, payload)
     }
 
-    func testResponseRoundTrip() throws {
+    func testArousalDeliveredRoundTrip() throws {
+        let payload = EntryPayload.arousalDelivered
+        let data = try JSONEncoder().encode(payload)
+        let decoded = try JSONDecoder().decode(EntryPayload.self, from: data)
+        XCTAssertEqual(decoded, payload)
+    }
+
+    func testSentimentResponseRoundTrip() throws {
         for sentiment in Sentiment.allCases {
             let payload = EntryPayload.sentimentResponse(sentiment: sentiment)
+            let data = try JSONEncoder().encode(payload)
+            let decoded = try JSONDecoder().decode(EntryPayload.self, from: data)
+            XCTAssertEqual(decoded, payload)
+        }
+    }
+
+    func testArousalResponseRoundTrip() throws {
+        for arousal in Arousal.allCases {
+            let payload = EntryPayload.arousalResponse(arousal: arousal)
             let data = try JSONEncoder().encode(payload)
             let decoded = try JSONDecoder().decode(EntryPayload.self, from: data)
             XCTAssertEqual(decoded, payload)
@@ -22,6 +38,12 @@ final class EntryPayloadTests: XCTestCase {
         let delivered = try JSONEncoder().encode(EntryPayload.sentimentDelivered)
         let response = try JSONEncoder().encode(EntryPayload.sentimentResponse(sentiment: .positive))
         XCTAssertNotEqual(delivered, response)
+    }
+
+    func testSentimentAndArousalResponsesAreDistinct() throws {
+        let s = try JSONEncoder().encode(EntryPayload.sentimentResponse(sentiment: .other))
+        let a = try JSONEncoder().encode(EntryPayload.arousalResponse(arousal: .other))
+        XCTAssertNotEqual(s, a, "Same 'other' raw value across axes must encode distinctly via case discriminator")
     }
 
     func testPermissionGrantedRoundTrip() throws {
@@ -66,19 +88,23 @@ final class EntryPayloadTests: XCTestCase {
         XCTAssertEqual(decoded, payload)
     }
 
-    func testIsSentiment() {
-        XCTAssertFalse(EntryPayload.sentimentDelivered.isSentiment)
-        XCTAssertTrue(EntryPayload.sentimentResponse(sentiment: .positive).isSentiment)
-        XCTAssertFalse(EntryPayload.permissionGranted.isSentiment)
-        XCTAssertFalse(EntryPayload.permissionDenied(error: nil).isSentiment)
-        XCTAssertFalse(EntryPayload.notificationsScheduled(count: 5, nextTime: nil).isSentiment)
-        XCTAssertFalse(EntryPayload.schedulingError(error: "fail").isSentiment)
-        XCTAssertFalse(EntryPayload.testNotificationScheduled.isSentiment)
+    func testIsResponse() {
+        XCTAssertTrue(EntryPayload.sentimentResponse(sentiment: .positive).isResponse)
+        XCTAssertTrue(EntryPayload.arousalResponse(arousal: .grossDull).isResponse)
+        XCTAssertFalse(EntryPayload.sentimentDelivered.isResponse)
+        XCTAssertFalse(EntryPayload.arousalDelivered.isResponse)
+        XCTAssertFalse(EntryPayload.permissionGranted.isResponse)
+        XCTAssertFalse(EntryPayload.permissionDenied(error: nil).isResponse)
+        XCTAssertFalse(EntryPayload.notificationsScheduled(count: 5, nextTime: nil).isResponse)
+        XCTAssertFalse(EntryPayload.schedulingError(error: "fail").isResponse)
+        XCTAssertFalse(EntryPayload.testNotificationScheduled.isResponse)
     }
 
     func testEmoji() {
         XCTAssertEqual(EntryPayload.sentimentDelivered.emoji, "📩")
+        XCTAssertEqual(EntryPayload.arousalDelivered.emoji, "📩")
         XCTAssertEqual(EntryPayload.sentimentResponse(sentiment: .positive).emoji, "😊")
+        XCTAssertEqual(EntryPayload.arousalResponse(arousal: .grossRestless).emoji, "🤯")
         XCTAssertEqual(EntryPayload.permissionGranted.emoji, "🔓")
         XCTAssertEqual(EntryPayload.permissionDenied(error: nil).emoji, "🚫")
         XCTAssertEqual(EntryPayload.notificationsScheduled(count: 3, nextTime: nil).emoji, "📅 3")
@@ -87,8 +113,10 @@ final class EntryPayloadTests: XCTestCase {
     }
 
     func testLabel() {
-        XCTAssertEqual(EntryPayload.sentimentDelivered.label, "Delivered")
-        XCTAssertEqual(EntryPayload.sentimentResponse(sentiment: .veryPositive).label, "Response: 🤩")
+        XCTAssertEqual(EntryPayload.sentimentDelivered.label, "Valence delivered")
+        XCTAssertEqual(EntryPayload.sentimentResponse(sentiment: .veryPositive).label, "Valence: 🤩")
+        XCTAssertEqual(EntryPayload.arousalDelivered.label, "Activation delivered")
+        XCTAssertEqual(EntryPayload.arousalResponse(arousal: .subtleDull).label, "Activation: 😪")
         XCTAssertEqual(EntryPayload.permissionGranted.label, "Permission: OK")
         XCTAssertEqual(EntryPayload.permissionDenied(error: "nope").label, "Permission: DENIED nope")
         XCTAssertEqual(EntryPayload.permissionDenied(error: nil).label, "Permission: DENIED")
@@ -101,6 +129,8 @@ final class EntryPayloadTests: XCTestCase {
         let cases: [EntryPayload] = [
             .sentimentDelivered,
             .sentimentResponse(sentiment: .positive),
+            .arousalDelivered,
+            .arousalResponse(arousal: .grossDull),
             .permissionGranted,
             .permissionDenied(error: "test"),
             .notificationsScheduled(count: 5, nextTime: nil),

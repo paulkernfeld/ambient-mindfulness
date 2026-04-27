@@ -3,16 +3,18 @@ import Foundation
 enum EntryPayload: Codable, Equatable {
     case sentimentDelivered
     case sentimentResponse(sentiment: Sentiment)
+    case arousalDelivered
+    case arousalResponse(arousal: Arousal)
     case permissionGranted
     case permissionDenied(error: String?)
     case notificationsScheduled(count: Int, nextTime: Date?)
     case schedulingError(error: String)
     case testNotificationScheduled
 
-    var isSentiment: Bool {
+    var isResponse: Bool {
         switch self {
-        case .sentimentResponse: return true
-        case .sentimentDelivered, .permissionGranted, .permissionDenied,
+        case .sentimentResponse, .arousalResponse: return true
+        case .sentimentDelivered, .arousalDelivered, .permissionGranted, .permissionDenied,
              .notificationsScheduled, .schedulingError, .testNotificationScheduled: return false
         }
     }
@@ -21,6 +23,8 @@ enum EntryPayload: Codable, Equatable {
         switch self {
         case .sentimentDelivered: return "📩"
         case .sentimentResponse(let s): return s.emoji
+        case .arousalDelivered: return "📩"
+        case .arousalResponse(let a): return a.emoji
         case .permissionGranted: return "🔓"
         case .permissionDenied: return "🚫"
         case .notificationsScheduled(let count, _): return "📅 \(count)"
@@ -31,8 +35,10 @@ enum EntryPayload: Codable, Equatable {
 
     var label: String {
         switch self {
-        case .sentimentDelivered: return "Delivered"
-        case .sentimentResponse(let s): return "Response: \(s.emoji)"
+        case .sentimentDelivered: return "Valence delivered"
+        case .sentimentResponse(let s): return "Valence: \(s.emoji)"
+        case .arousalDelivered: return "Activation delivered"
+        case .arousalResponse(let a): return "Activation: \(a.emoji)"
         case .permissionGranted: return "Permission: OK"
         case .permissionDenied(let e): return "Permission: DENIED" + (e.map { " \($0)" } ?? "")
         case .notificationsScheduled(let c, _): return "Scheduled: \(c)"
